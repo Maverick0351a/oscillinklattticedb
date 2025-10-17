@@ -1,0 +1,4 @@
+file,ocr_label
+bench/assets/pdfs/dummy.pdf,ok
+bench/assets/docx/sample3.docx,ok
+bench/assets/csv/tips.csv,ok

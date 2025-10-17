@@ -1,0 +1,8 @@
+apiVersion: v2
+name: oscillink-latticedb
+version: 0.1.0
+appVersion: "0.1.0"
+description: Helm chart for Oscillink LatticeDB API and UI
+home: https://github.com/your-org/oscillink-latticedb
+keywords: [latticedb, rag, fastapi, vite]
+type: application

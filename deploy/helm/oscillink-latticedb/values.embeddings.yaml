@@ -1,0 +1,16 @@
+# Example overrides for embedding configuration
+# Apply with:
+#   helm upgrade --install latticedb ./oscillink-latticedb -n latticedb \
+#     -f ./oscillink-latticedb/values.embeddings.yaml
+# Or selectively override with --set flags.
+
+api:
+  env:
+    # Choose a preset from /v1/latticedb/models (default: bge-small-en-v1.5)
+    LATTICEDB_EMBED_MODEL: "bge-small-en-v1.5"
+    # Device: cpu or cuda (ensure nodes have GPU + drivers for cuda)
+    LATTICEDB_EMBED_DEVICE: "cpu"
+    # Throughput control (adjust based on CPU/GPU and latency tolerance)
+    LATTICEDB_EMBED_BATCH_SIZE: "32"
+    # Fail-fast if model/tokenizer hashes cannot be determined
+    LATTICEDB_EMBED_STRICT_HASH: "false"

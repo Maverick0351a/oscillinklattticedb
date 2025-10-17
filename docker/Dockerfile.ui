@@ -1,0 +1,22 @@
+FROM node:20-alpine
+LABEL org.opencontainers.image.title="Oscillink LatticeDB UI"
+LABEL org.opencontainers.image.licenses="BUSL-1.1"
+WORKDIR /ui
+
+# Install deps using cached layer
+COPY ui/package*.json /ui/
+RUN npm ci || npm install
+
+# Copy source
+COPY ui /ui
+
+# Add healthcheck script
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+	CMD wget -qO- http://127.0.0.1:8081/ || exit 1
+
+# Create non-root user
+RUN adduser -D uiuser && chown -R uiuser:uiuser /ui
+USER uiuser
+
+EXPOSE 8081
+CMD ["npm","run","preview","--","--host","0.0.0.0","--port","8081"]

@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "oscillink-latticedb.fullname" . }}-api
+  labels:
+    app.kubernetes.io/name: {{ include "oscillink-latticedb.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: api
+spec:
+  type: {{ .Values.service.api.type }}
+  selector:
+    app.kubernetes.io/name: {{ include "oscillink-latticedb.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: api
+  ports:
+    - name: http
+      port: {{ .Values.service.api.port }}
+      targetPort: http

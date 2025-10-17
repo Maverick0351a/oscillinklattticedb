@@ -1,0 +1,34 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    ports:
+      - "127.0.0.1:8080:8080"
+    # Load environment variables for the API (dev only). For production, prefer secrets/CI-managed env.
+    env_file:
+      - api/.env
+    volumes:
+      - ./latticedb:/app/latticedb
+      - ./sample_data:/app/sample_data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys;sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/health').status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+  ui:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.ui
+    ports:
+      - "127.0.0.1:8081:8081"
+    environment:
+      - VITE_API_URL=http://127.0.0.1:8080
+    depends_on:
+      api:
+        condition: service_healthy
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "127.0.0.1:6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]

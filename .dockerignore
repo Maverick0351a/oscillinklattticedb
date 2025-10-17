@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pkl
+
+# Venvs
+.venv/
+venv/
+
+# Node
+ui/node_modules/
+ui/.vite/
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+
+# Test artifacts
+api/.pytest_cache/
+api/.ruff_cache/
+coverage/
+
+# Local data
+latticedb/
+sample_data/

@@ -1,0 +1,37 @@
+{{- if or .Values.pdb.api.enabled .Values.pdb.ui.enabled }}
+{{- if .Values.pdb.api.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "oscillink-latticedb.fullname" . }}-api
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "oscillink-latticedb.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: api
+  {{- if .Values.pdb.api.minAvailable }}
+  minAvailable: {{ .Values.pdb.api.minAvailable }}
+  {{- else if .Values.pdb.api.maxUnavailable }}
+  maxUnavailable: {{ .Values.pdb.api.maxUnavailable }}
+  {{- end }}
+---
+{{- end }}
+{{- if .Values.pdb.ui.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "oscillink-latticedb.fullname" . }}-ui
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "oscillink-latticedb.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: ui
+  {{- if .Values.pdb.ui.minAvailable }}
+  minAvailable: {{ .Values.pdb.ui.minAvailable }}
+  {{- else if .Values.pdb.ui.maxUnavailable }}
+  maxUnavailable: {{ .Values.pdb.ui.maxUnavailable }}
+  {{- end }}
+{{- end }}
+{{- end }}

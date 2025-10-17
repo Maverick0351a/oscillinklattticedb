@@ -1,0 +1,4 @@
+{"file_sha256": "1555cf7babadfe183c8a5bb04285b92eebb20d619c350acda13b5bdf9a6547d4", "lattice_id": "L-000001", "source": "csv_tips.txt"}
+{"file_sha256": "205bd2f086839914904870dedf5106a7c0708391228fd0159a5ad86bb0b8587a", "lattice_id": "L-000002", "source": "docx_sample3.txt"}
+{"file_sha256": "d8102315b78cf85eb39a14c07813ea127ba16de64086bc11f608ce65399e01ba", "lattice_id": "L-000003", "source": "pdfs_dummy.txt"}
+{"file_sha256": "635efc20a6b43aca98ac3e3f8b42ba7f4e2b0ed3f09505cff521fc9afce7a3c2", "lattice_id": "L-000004", "source": "vendor_csv_iris.txt"}

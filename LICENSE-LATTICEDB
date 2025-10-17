@@ -1,0 +1,39 @@
+Business Source License 1.1 (BSL-1.1)
+
+Licensor: Odin Protocol Inc.
+
+Licensed Work: "Oscillink LatticeDB Engine — self‑building local RAG database (all code under /api, /ui, /docs, /deploy, /docker, except files explicitly marked otherwise)."
+
+Additional Use Grant:
+"You may use, copy, modify, and run the Licensed Work solely for non‑production development, testing, personal demos, education, and internal proofs‑of‑concept (up to 10 named users per organization). Any production use, or any deployment for third parties, requires a Commercial License from the Licensor."
+
+Change Date: 2029-10-16
+
+Change License: MIT
+
+Note: The full text of the Business Source License 1.1 follows. Do not modify the text below this line.
+
+====================
+Business Source License 1.1
+
+Parameters
+Licensor: The entity specified above.
+Licensed Work: The work specified above.
+Additional Use Grant: The grant specified above.
+Change Date: The date specified above.
+Change License: The license specified above.
+
+Terms
+The Licensor hereby grants you the right to copy, modify, create derivative works, redistribute, and make non‑production use of the Licensed Work. The Licensor may make an Additional Use Grant, above, permitting certain additional uses of the Licensed Work that would otherwise be prohibited under this license.
+
+Effective on the Change Date, or the fourth anniversary of the first publicly available distribution of a given version of the Licensed Work under this license, whichever comes first, the Licensed Work will be made available under the Change License. Before the Change Date, you may not use the Licensed Work for production purposes, and you may not use the Licensed Work to provide a service to third parties, except as permitted by the Additional Use Grant.
+
+You must include the notice with the parameters specified above with all copies of the Licensed Work you distribute and modify, and you must retain the license text. You must cause any modified files to carry prominent notices stating that you changed the files.
+
+No trademark rights are granted under this license. This license does not grant you any right in any trademark, service mark, trade name, or logo of Licensor.
+
+TO THE EXTENT PERMITTED BY APPLICABLE LAW, THE LICENSED WORK IS PROVIDED ON AN "AS IS" BASIS. LICENSOR HEREBY DISCLAIMS ALL WARRANTIES AND CONDITIONS, EXPRESS OR IMPLIED, INCLUDING (WITHOUT LIMITATION) WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, NON‑INFRINGEMENT, AND TITLE.
+
+This license is governed by the laws of the jurisdiction specified by the Licensor, if any; otherwise, the laws of the jurisdiction where the Licensor is located. Any dispute arising hereunder shall be subject to the exclusive jurisdiction of the courts of that jurisdiction.
+
+For more information and the canonical text of the Business Source License 1.1, see https://mariadb.com/bsl11/.

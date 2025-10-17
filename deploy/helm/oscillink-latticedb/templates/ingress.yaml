@@ -1,0 +1,104 @@
+{{- if and .Values.ingress.enabled (not .Values.ingress.split) }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "oscillink-latticedb.fullname" . }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.ingress.className }}
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- end }}
+  rules:
+    {{- range .Values.ingress.hosts }}
+    - host: {{ .host }}
+      http:
+        paths:
+          - path: {{ .ui.path }}
+            pathType: {{ .ui.pathType }}
+            backend:
+              service:
+                name: {{ include "oscillink-latticedb.fullname" $ }}-ui
+                port:
+                  number: {{ $.Values.service.ui.port }}
+          - path: {{ .api.path }}
+            pathType: {{ .api.pathType }}
+            backend:
+              service:
+                name: {{ include "oscillink-latticedb.fullname" $ }}-api
+                port:
+                  number: {{ $.Values.service.api.port }}
+    {{- end }}
+  {{- if .Values.ingress.tls }}
+  tls:
+    {{- toYaml .Values.ingress.tls | nindent 4 }}
+  {{- end }}
+{{- end }}
+
+{{- if and .Values.ingress.enabled .Values.ingress.split }}
+{{- if .Values.ingress.ui.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "oscillink-latticedb.fullname" . }}-ui
+  {{- with .Values.ingress.ui.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.ingress.ui.className }}
+  ingressClassName: {{ .Values.ingress.ui.className }}
+  {{- end }}
+  rules:
+    {{- range .Values.ingress.ui.hosts }}
+    - host: {{ .host }}
+      http:
+        paths:
+          - path: {{ .path }}
+            pathType: {{ .pathType }}
+            backend:
+              service:
+                name: {{ include "oscillink-latticedb.fullname" $ }}-ui
+                port:
+                  number: {{ $.Values.service.ui.port }}
+    {{- end }}
+  {{- if .Values.ingress.ui.tls }}
+  tls:
+    {{- toYaml .Values.ingress.ui.tls | nindent 4 }}
+  {{- end }}
+---
+{{- end }}
+{{- if .Values.ingress.api.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "oscillink-latticedb.fullname" . }}-api
+  {{- with .Values.ingress.api.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.ingress.api.className }}
+  ingressClassName: {{ .Values.ingress.api.className }}
+  {{- end }}
+  rules:
+    {{- range .Values.ingress.api.hosts }}
+    - host: {{ .host }}
+      http:
+        paths:
+          - path: {{ .path }}
+            pathType: {{ .pathType }}
+            backend:
+              service:
+                name: {{ include "oscillink-latticedb.fullname" $ }}-api
+                port:
+                  number: {{ $.Values.service.api.port }}
+    {{- end }}
+  {{- if .Values.ingress.api.tls }}
+  tls:
+    {{- toYaml .Values.ingress.api.tls | nindent 4 }}
+  {{- end }}
+{{- end }}
+{{- end }}

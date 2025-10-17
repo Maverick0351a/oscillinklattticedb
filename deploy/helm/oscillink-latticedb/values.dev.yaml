@@ -1,0 +1,100 @@
+# Development overrides
+image:
+  api:
+    tag: dev
+  ui:
+    tag: dev
+
+service:
+  api:
+    type: ClusterIP
+  ui:
+    type: ClusterIP
+
+autoscaling:
+  api:
+    enabled: false
+  ui:
+    enabled: false
+
+resources:
+  api:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  ui:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+ingress:
+  enabled: true
+  split: false
+  className: ""
+  hosts:
+    - host: latticedb.local
+      ui:
+        path: /
+        pathType: Prefix
+      api:
+        path: /api
+        pathType: Prefix
+  tls: []
+
+api:
+  env:
+    LATTICEDB_JWT_ENABLED: "false"
+    LATTICEDB_RATE_LIMIT_ENABLED: "false"
+    LATTICEDB_OTEL_ENABLED: "false"
+    # SPD (dev tuning examples)
+    LATTICEDB_SPD_DIM: "32"
+    LATTICEDB_SPD_K_NEIGHBORS: "4"
+    LATTICEDB_SPD_LAMBDA_G: "1.0"
+    LATTICEDB_SPD_LAMBDA_C: "0.5"
+    LATTICEDB_SPD_LAMBDA_Q: "4.0"
+    LATTICEDB_SPD_TOL: "1e-5"
+    LATTICEDB_SPD_MAX_ITER: "256"
+  volume:
+    enabled: false
+
+redis:
+  enabled: false
+
+# Optional NetworkPolicy (disabled by default for local dev)
+networkPolicy:
+  enabled: false
+  api:
+    ingress:
+      from:
+        # Example: allow ingress from ingress-nginx only
+        # - namespaceSelector:
+        #     matchLabels:
+        #       kubernetes.io/metadata.name: ingress-nginx
+        #   podSelector:
+        #     matchLabels:
+        #       app.kubernetes.io/name: ingress-nginx
+      
+    egress:
+      allowClusterDNS: true
+      allowRedis: false
+      extra: []
+  ui:
+    ingress:
+      from:
+        # Example: allow ingress from ingress-nginx only
+        # - namespaceSelector:
+        #     matchLabels:
+        #       kubernetes.io/metadata.name: ingress-nginx
+        #   podSelector:
+        #     matchLabels:
+        #       app.kubernetes.io/name: ingress-nginx
+    egress:
+      allowClusterDNS: true
+      # allowAPIOnly: true
+      extra: []

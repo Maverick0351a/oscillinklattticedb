@@ -1,0 +1,125 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, asdict
+from pathlib import Path
+from typing import List, Optional, Dict, Any
+import yaml
+
+
+@dataclass
+class ShardEntry:
+    id: str
+    path: str  # relative to input_root
+    size_bytes: int
+    file_count: int
+    active_backend: str = "jsonl"  # jsonl|faiss (future)
+    centroid_hash: Optional[str] = None  # filled by watcher when available
+
+
+@dataclass
+class ShardsState:
+    version: str
+    base_dir: str
+    shards: List[ShardEntry]
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "version": self.version,
+            "base_dir": self.base_dir,
+            "shards": [asdict(s) for s in self.shards],
+        }
+
+
+def compute_shards(input_root: Path) -> List[ShardEntry]:
+    """Partition input_root by top-level folders into shards.
+
+    Files directly under input_root are grouped into a synthetic shard 'root'.
+    """
+    input_root = input_root.resolve()
+    shards: List[ShardEntry] = []
+    # top-level directories become shards
+    for child in sorted([p for p in input_root.iterdir() if p.is_dir()]):
+        size = 0
+        count = 0
+        for f in child.rglob("*"):
+            if f.is_file():
+                try:
+                    size += f.stat().st_size
+                    count += 1
+                except Exception:
+                    pass
+        shards.append(
+            ShardEntry(
+                id=f"shard-{child.name}",
+                path=str(child.relative_to(input_root).as_posix()),
+                size_bytes=size,
+                file_count=count,
+            )
+        )
+    # files at root
+    root_files = [p for p in input_root.iterdir() if p.is_file()]
+    if root_files:
+        size = 0
+        for f in root_files:
+            try:
+                size += f.stat().st_size
+            except Exception:
+                pass
+        shards.append(
+            ShardEntry(
+                id="shard-root",
+                path=".",
+                size_bytes=size,
+                file_count=len(root_files),
+            )
+        )
+    return shards
+
+
+def read_shards_yaml(out_path: Path) -> Optional[ShardsState]:
+    if not out_path.exists():
+        return None
+    try:
+        data = yaml.safe_load(out_path.read_text(encoding="utf-8")) or {}
+        shards = [ShardEntry(**s) for s in data.get("shards", [])]
+        return ShardsState(
+            version=str(data.get("version", "1")),
+            base_dir=str(data.get("base_dir", ".")),
+            shards=shards,
+        )
+    except Exception:
+        return None
+
+
+def write_shards_yaml(input_root: Path, out_path: Path) -> ShardsState:
+    """Compute shards and write shards.yaml, preserving existing active_backend values if present."""
+    shards = compute_shards(input_root)
+    # Preserve existing active_backend values if shard IDs match
+    prev = read_shards_yaml(out_path)
+    if prev:
+        prev_map = {s.id: s for s in prev.shards}
+        for s in shards:
+            if s.id in prev_map:
+                s.active_backend = prev_map[s.id].active_backend
+                s.centroid_hash = prev_map[s.id].centroid_hash
+    state = ShardsState(version="1", base_dir=input_root.as_posix(), shards=shards)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(yaml.safe_dump(state.to_dict(), sort_keys=False), encoding="utf-8")
+    return state
+
+
+def apply_backend_promotions(out_path: Path, promotions: Dict[str, str]) -> ShardsState:
+    """Update active_backend for specific shards in shards.yaml and return updated state."""
+    current = read_shards_yaml(out_path)
+    if current is None:
+        raise FileNotFoundError(f"shards.yaml not found at {out_path}")
+    changed = False
+    for s in current.shards:
+        if s.id in promotions:
+            new_backend = promotions[s.id]
+            if s.active_backend != new_backend:
+                s.active_backend = new_backend
+                changed = True
+    if changed:
+        out_path.write_text(yaml.safe_dump(current.to_dict(), sort_keys=False), encoding="utf-8")
+    return current

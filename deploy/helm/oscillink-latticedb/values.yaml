@@ -1,0 +1,266 @@
+image:
+  api:
+    repository: ghcr.io/your-org/oscillink-latticedb-api
+    tag: latest
+    pullPolicy: IfNotPresent
+  ui:
+    repository: ghcr.io/your-org/oscillink-latticedb-ui
+    tag: latest
+    pullPolicy: IfNotPresent
+
+service:
+  api:
+    type: ClusterIP
+    port: 8080
+  ui:
+    type: ClusterIP
+    port: 8081
+
+ingress:
+  enabled: false
+  # When split=false, a single Ingress is created with UI at / and API at /api
+  className: ""
+  annotations: {}
+  hosts:
+    - host: example.local
+      ui:
+        path: /
+        pathType: Prefix
+      api:
+        path: /api
+        pathType: Prefix
+  tls: []
+  # When split=true, two separate Ingress resources are created
+  split: false
+  ui:
+    enabled: true
+    className: ""
+    annotations: {}
+    hosts:
+      - host: app.example.com
+        path: /
+        pathType: Prefix
+    tls: []
+  api:
+    enabled: true
+    className: ""
+    annotations: {}
+    hosts:
+      - host: api.example.com
+        path: /api
+        pathType: Prefix
+    tls: []
+
+resources:
+  api:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 1
+      memory: 1Gi
+  ui:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+autoscaling:
+  api:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 75
+  ui:
+    enabled: false
+
+api:
+  env:
+    # Auth
+    LATTICEDB_JWT_ENABLED: "false"
+    LATTICEDB_JWT_SECRET: ""
+    LATTICEDB_JWT_ALGORITHMS: "HS256"
+    LATTICEDB_JWT_AUDIENCE: ""
+    LATTICEDB_JWT_ISSUER: ""
+    LATTICEDB_JWT_JWKS_URL: ""
+    LATTICEDB_JWT_LEEWAY: "0"
+    # Rate limiting
+    LATTICEDB_RATE_LIMIT_ENABLED: "false"
+    LATTICEDB_RATE_LIMIT_REQUESTS: "60"
+    LATTICEDB_RATE_LIMIT_PERIOD_SECONDS: "60"
+    LATTICEDB_RATE_LIMIT_REDIS_URL: ""
+    # Proxy/IP handling
+    LATTICEDB_TRUST_X_FORWARDED_FOR: "true"
+    # Timeouts/concurrency
+    LATTICEDB_REQUEST_TIMEOUT_SECONDS: "10"
+    LATTICEDB_MAX_CONCURRENCY: "100"
+    LATTICEDB_ENABLE_HSTS: "false"
+    # OTel tracing
+    LATTICEDB_OTEL_ENABLED: "false"
+    LATTICEDB_OTEL_SERVICE_NAME: "latticedb-api"
+    LATTICEDB_OTEL_EXPORTER_OTLP_ENDPOINT: ""
+    LATTICEDB_OTEL_SAMPLE_RATIO: "1.0"
+    # DB path inside container
+    LATTICEDB_DB_ROOT: "/app/latticedb"
+  # Embeddings
+  LATTICEDB_EMBED_MODEL: "bge-small-en-v1.5"
+  LATTICEDB_EMBED_DEVICE: "cpu"
+  LATTICEDB_EMBED_BATCH_SIZE: "32"
+  LATTICEDB_EMBED_STRICT_HASH: "false"
+  # SPD parameters
+  LATTICEDB_SPD_DIM: "32"
+  LATTICEDB_SPD_K_NEIGHBORS: "4"
+  LATTICEDB_SPD_LAMBDA_G: "1.0"
+  LATTICEDB_SPD_LAMBDA_C: "0.5"
+  LATTICEDB_SPD_LAMBDA_Q: "4.0"
+  LATTICEDB_SPD_TOL: "1e-5"
+  LATTICEDB_SPD_MAX_ITER: "256"
+  # Additional env entries (supports valueFrom for secrets)
+  extraEnv: []
+  volume:
+    enabled: true
+    size: 1Gi
+  # Security contexts
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: ["ALL"]
+  podSecurityContext:
+    fsGroup: 10001
+    seccompProfile:
+      type: RuntimeDefault
+  # Scheduling
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  topologySpreadConstraints: []
+
+ui:
+  env:
+    VITE_API_URL: "http://oscillink-latticedb-api:8080"
+  # Security contexts
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10002
+    runAsGroup: 10002
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: ["ALL"]
+  podSecurityContext:
+    fsGroup: 10002
+    seccompProfile:
+      type: RuntimeDefault
+  # Scheduling
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  topologySpreadConstraints: []
+
+redis:
+  enabled: false
+  image: redis:7-alpine
+  service:
+    port: 6379
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+# PodDisruptionBudgets
+pdb:
+  api:
+    enabled: true
+    # Use either minAvailable or maxUnavailable (leave the other null)
+    minAvailable: 1
+    maxUnavailable: null
+  ui:
+    enabled: false
+    minAvailable: 1
+    maxUnavailable: null
+
+# Prometheus Operator alerts (optional)
+alerts:
+  enabled: false
+  # Optional metadata
+  name: ""
+  labels: {}
+  annotations: {}
+  groups:
+    - name: latticedb.rules
+      rules:
+        - alert: HighErrorRate
+          expr: |
+            (sum by (path) (rate(http_requests_total{status=~"5.."}[5m]))
+              /
+             sum by (path) (rate(http_requests_total[5m]))) > 0.05
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High 5xx error rate (>5%) on {{ $labels.path }}"
+            description: "Investigate errors on {{ $labels.path }}"
+        - alert: HighLatencyP95
+          expr: |
+            histogram_quantile(0.95, sum by (le, path) (rate(http_request_duration_seconds_bucket[5m]))) > 1
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High p95 latency (>1s) on {{ $labels.path }}"
+            description: "Requests are slow on {{ $labels.path }}"
+        - alert: FrequentRateLimiting
+          expr: sum by (path) (rate(http_rate_limited_total[5m])) > 0.5
+          for: 10m
+          labels:
+            severity: info
+          annotations:
+            summary: "Clients frequently rate-limited on {{ $labels.path }}"
+            description: "Review limits or client behavior."
+        - alert: ServerOverloaded
+          expr: sum by (path) (rate(http_requests_overload_total[5m])) > 0.1
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "503 overloads observed on {{ $labels.path }}"
+            description: "Max concurrency reached; consider tuning LATTICEDB_MAX_CONCURRENCY or scaling."
+        - alert: RequestTimeouts
+          expr: sum by (path) (rate(http_request_timeouts_total[5m])) > 0.1
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "504 timeouts observed on {{ $labels.path }}"
+            description: "Increase timeout or investigate slow handlers."
+
+# NetworkPolicies (optional)
+networkPolicy:
+  enabled: false
+  api:
+    ingress:
+      # Allow cluster ingress controllers by namespace/label selector (example placeholders)
+      from: []
+      # Example:
+      # - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: ingress-nginx } }
+      #   podSelector: { matchLabels: { app.kubernetes.io/name: ingress-nginx } }
+    egress:
+      allowClusterDNS: true
+      allowRedis: true
+      extra: []
+  ui:
+    ingress:
+      from: []
+    egress:
+      allowClusterDNS: true
+      allowAPIOnly: false
+      extra: []

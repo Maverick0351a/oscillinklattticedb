@@ -1,0 +1,117 @@
+{{- if .Values.networkPolicy.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "oscillink-latticedb.fullname" . }}-api
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "oscillink-latticedb.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: api
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - {{- if .Values.networkPolicy.api.ingress.from }}
+      from:
+        {{- toYaml .Values.networkPolicy.api.ingress.from | nindent 8 }}
+      {{- else }}
+      {}
+      {{- end }}
+  egress:
+    {{- if and .Values.redis.enabled .Values.networkPolicy.api.egress.allowRedis }}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ include "oscillink-latticedb.name" . }}
+              app.kubernetes.io/instance: {{ .Release.Name }}
+              app.kubernetes.io/component: redis
+      ports:
+        - protocol: TCP
+          port: {{ .Values.redis.service.port | default 6379 }}
+    {{- end }}
+    {{- if .Values.networkPolicy.api.egress.allowClusterDNS }}
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    {{- end }}
+    {{- with .Values.networkPolicy.api.egress.extra }}
+    - {{- toYaml . | nindent 6 }}
+    {{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "oscillink-latticedb.fullname" . }}-ui
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "oscillink-latticedb.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: ui
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - {{- if .Values.networkPolicy.ui.ingress.from }}
+      from:
+        {{- toYaml .Values.networkPolicy.ui.ingress.from | nindent 8 }}
+      {{- else }}
+      {}
+      {{- end }}
+  egress:
+    {{- if .Values.networkPolicy.ui.egress.allowAPIOnly }}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ include "oscillink-latticedb.name" . }}
+              app.kubernetes.io/instance: {{ .Release.Name }}
+              app.kubernetes.io/component: api
+      ports:
+        - protocol: TCP
+          port: {{ .Values.service.api.port }}
+    {{- end }}
+    {{- if .Values.networkPolicy.ui.egress.allowClusterDNS }}
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    {{- end }}
+    {{- with .Values.networkPolicy.ui.egress.extra }}
+    - {{- toYaml . | nindent 6 }}
+    {{- end }}
+---
+{{- if and .Values.redis.enabled .Values.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "oscillink-latticedb.fullname" . }}-redis
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "oscillink-latticedb.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: redis
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ include "oscillink-latticedb.name" . }}
+              app.kubernetes.io/instance: {{ .Release.Name }}
+              app.kubernetes.io/component: api
+      ports:
+        - protocol: TCP
+          port: {{ .Values.redis.service.port | default 6379 }}
+{{- end }}
+{{- end }}

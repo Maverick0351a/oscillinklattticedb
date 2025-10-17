@@ -1,0 +1,36 @@
+FROM python:3.11-slim
+LABEL org.opencontainers.image.title="Oscillink LatticeDB API"
+LABEL org.opencontainers.image.licenses="BUSL-1.1"
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+	PYTHONUNBUFFERED=1 \
+	UVICORN_WORKERS=1 \
+	PORT=8080
+
+WORKDIR /app
+
+# Install runtime deps first
+COPY api/pyproject.toml api/README.md /app/
+RUN pip install --no-cache-dir -e .
+
+# Copy source code
+COPY api /app/api
+WORKDIR /app/api
+
+# Create non-root user
+RUN useradd -m appuser && chown -R appuser:appuser /app
+USER appuser
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD python - <<'PY' || exit 1
+import sys, urllib.request
+try:
+	with urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=2) as r:
+		sys.exit(0 if r.status==200 else 1)
+except Exception:
+	sys.exit(1)
+PY
+
+CMD ["uvicorn","app.main:app","--host","0.0.0.0","--port","8080"]

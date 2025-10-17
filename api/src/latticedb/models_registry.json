@@ -1,0 +1,38 @@
+{
+  "bge-small-en-v1.5": {
+    "hf": "BAAI/bge-small-en-v1.5",
+    "dim": 384,
+    "license": "MIT",
+    "prompt_format": {"doc": "passage: {text}", "query": "query: {text}"},
+    "rev": null,
+    "sha256": null,
+    "tokenizer_sha256": null
+  },
+  "gte-base-en-v1.5": {
+    "hf": "Alibaba-NLP/gte-base-en-v1.5",
+    "dim": 768,
+    "license": "Apache-2.0",
+    "prompt_format": {"doc": "document: {text}", "query": "query: {text}"},
+    "rev": null,
+    "sha256": null,
+    "tokenizer_sha256": null
+  },
+  "bge-m3": {
+    "hf": "BAAI/bge-m3",
+    "dim": 1024,
+    "license": "MIT",
+    "prompt_format": {"doc": "passage: {text}", "query": "query: {text}"},
+    "rev": null,
+    "sha256": null,
+    "tokenizer_sha256": null
+  },
+  "e5-small-v2": {
+    "hf": "intfloat/e5-small-v2",
+    "dim": 384,
+    "license": "Apache-2.0",
+    "prompt_format": {"doc": "passage: {text}", "query": "query: {text}"},
+    "rev": null,
+    "sha256": null,
+    "tokenizer_sha256": null
+  }
+}

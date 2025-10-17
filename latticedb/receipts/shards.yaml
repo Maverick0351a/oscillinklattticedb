@@ -1,0 +1,9 @@
+version: '1'
+base_dir: C:/Users/Maver/Downloads/oscillink-latticedb-scaffold/sample_data/assets_txt
+shards:
+- id: shard-root
+  path: .
+  size_bytes: 5950
+  file_count: 4
+  active_backend: faiss
+  centroid_hash: null

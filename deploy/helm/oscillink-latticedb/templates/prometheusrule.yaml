@@ -1,0 +1,18 @@
+{{- if .Values.alerts.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ if .Values.alerts.name }}{{ .Values.alerts.name }}{{ else }}{{ include "oscillink-latticedb.fullname" . }}{{ end }}
+  labels:
+    {{- include "oscillink-latticedb.name" . | nindent 4 }}: "true"
+    {{- with .Values.alerts.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with .Values.alerts.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  groups:
+    {{- toYaml .Values.alerts.groups | nindent 4 }}
+{{- end }}

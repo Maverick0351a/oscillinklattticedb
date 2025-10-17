@@ -1,0 +1,27 @@
+# Firm configuration for self-building DB thresholds and behavior
+# Intended to be read by the watcher/orchestrator once implemented
+version: 1
+sharding:
+  strategy: by-top-level-folder
+  max_shard_size_mb: 128
+  max_jsonl_chunks: 20000
+backend_switch:
+  enable: true
+  thresholds:
+    size_mb: 128
+    chunks: 20000
+  active_backend: jsonl
+composite:
+  k_centroids: 4
+  recompute_every_secs: 30
+ocr:
+  enable: true
+  abstain_below: 0.55
+  penalize_below: 0.70
+  penalty: 0.5
+security:
+  egress_default: deny
+  models: local-verified
+receipts:
+  enable_db_merkle: true
+  include_leaves: true

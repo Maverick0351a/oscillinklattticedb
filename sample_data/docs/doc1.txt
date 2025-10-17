@@ -1,0 +1,2 @@
+Oscillink is a coherence engine that minimizes a convex energy to settle a working memory over a mutual-kNN lattice.
+It returns receipts with dH, residuals, and hashes.
