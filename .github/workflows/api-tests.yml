@@ -5,11 +5,6 @@ on:
     paths:
       - 'api/**'
       - '.github/workflows/api-tests.yml'
-  push:
-    branches: [ develop, main ]
-    paths:
-      - 'api/**'
-      - '.github/workflows/api-tests.yml'
 
 jobs:
   test-api:

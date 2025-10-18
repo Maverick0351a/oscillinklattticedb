@@ -25,6 +25,10 @@ ui/.vite/
 api/.pytest_cache/
 api/.ruff_cache/
 coverage/
+api/coverage_html/
+_bench/
+bench/
+.github/
 
 # Local data
 latticedb/

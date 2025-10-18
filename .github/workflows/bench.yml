@@ -44,9 +44,11 @@ jobs:
               echo "API is up"; exit 0; fi; sleep 1; done
           echo "API failed to start"; echo "---uvicorn.log---"; tail -n 200 uvicorn.log || true; exit 1
 
-      - name: Run bench suite
+      - name: Run bench scripts
         run: |
-          python api/scripts/bench_suite.py --url http://127.0.0.1:8080 --q 'What is Oscillink?' --k-lattices 8 --select 6 --runs 10 --timeout 30 --with-concurrency
+          python api/scripts/bench_query.py --url http://127.0.0.1:8080 --db-path latticedb --runs 10 --warmup 2 --q 'What short sanity check?' --k-lattices 8 --select 6 --out _bench/bench_query.json --csv _bench/bench_query.csv || true
+          python api/scripts/bench_scale.py --url http://127.0.0.1:8080 --db-path latticedb --q 'What is Oscillink?' --select 6 --runs 10 --k-grid 4,8 --out _bench/bench_scale.json || true
+          python api/scripts/bench_concurrency.py --url http://127.0.0.1:8080 --runs 50 --concurrency 10 --q 'What is Oscillink?' || true
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

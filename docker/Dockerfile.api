@@ -7,15 +7,14 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 	UVICORN_WORKERS=1 \
 	PORT=8080
 
-WORKDIR /app
+WORKDIR /app/api
 
-# Install runtime deps first
-COPY api/pyproject.toml api/README.md /app/
+# Install runtime deps first (leverage layer cache)
+COPY api/pyproject.toml api/README.md /app/api/
 RUN pip install --no-cache-dir -e .
 
 # Copy source code
 COPY api /app/api
-WORKDIR /app/api
 
 # Create non-root user
 RUN useradd -m appuser && chown -R appuser:appuser /app
