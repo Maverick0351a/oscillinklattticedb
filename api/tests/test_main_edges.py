@@ -152,6 +152,10 @@ def test_internal_error_500_tracks_metric():
     client = TestClient(app, raise_server_exceptions=False)
     r = client.get("/__boom")
     assert r.status_code == 500
+    # Metrics endpoint should reflect error counts for this path
+    m = client.get("/metrics").text
+    assert "http_requests_errors_total" in m
+    assert "path=\"/__boom\"" in m or "__boom" in m
 
 
 def test_api_db_scan_endpoint(tmp_path: Path):
@@ -169,6 +173,24 @@ def test_api_db_scan_endpoint(tmp_path: Path):
         json={"input_dir": str(inp), "out_dir": str(out)},
     )
     assert r.status_code == 200
+    # SPD gauges are set after ingest via scan
+    metrics = client.get("/metrics").text
+    assert "spd_deltaH_last" in metrics
+    assert "spd_residual_last" in metrics
+
+def test_jwt_invalid_token_401(tmp_path: Path):
+    from app import main as m
+    m.settings.jwt_enabled = True
+    m.settings.jwt_secret = "secret"
+    m.settings.jwt_algorithms = ["HS256"]
+    c = TestClient(m.app)
+    inp = tmp_path / "in"
+    out = tmp_path / "out"
+    inp.mkdir(parents=True)
+    # Use an invalid token
+    bad = "Bearer abc.def.ghi"
+    r = c.post("/v1/latticedb/ingest", headers={"Authorization": bad}, json={"input_dir": str(inp), "out_dir": str(out)})
+    assert r.status_code == 401
 
 
 def test_timeout_middleware_and_concurrency_503(monkeypatch):

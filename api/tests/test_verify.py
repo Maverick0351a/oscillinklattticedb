@@ -47,6 +47,9 @@ def test_verify_endpoint_missing_db_receipt(tmp_path):
 
 
 def test_verify_endpoint_detects_tampered_composite(tmp_path):
+    from app.main import settings
+    # Ensure JWT is disabled for this flow to avoid auth interference
+    settings.jwt_enabled = False
     client = TestClient(app)
     data_dir = Path(__file__).resolve().parents[2] / "sample_data" / "docs"
     out_dir = tmp_path / "db"

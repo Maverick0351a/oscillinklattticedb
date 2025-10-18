@@ -1,69 +1,85 @@
 from __future__ import annotations
 
-import os
-import time
-import pytest
 from fastapi.testclient import TestClient
-
-from app.main import app, settings
-
-
-def _redis_available(url: str) -> bool:
-    try:
-        import redis  # type: ignore
-        r = redis.StrictRedis.from_url(url)
-        r.ping()
-        return True
-    except Exception:
-        return False
+import sys
+from types import ModuleType
 
 
-@pytest.mark.skipif(
-    not _redis_available(os.environ.get("TEST_REDIS_URL", "redis://127.0.0.1:6379/15")),
-    reason="Redis not available; skipping Redis rate limit test",
-)
-def test_redis_rate_limit_window_enforced(tmp_path):
-    import redis  # type: ignore
+def test_rate_limit_redis_success(monkeypatch):
+    from app.main import app, settings, _RL_STATE
 
-    client = TestClient(app)
-    url = os.environ.get("TEST_REDIS_URL", "redis://127.0.0.1:6379/15")
+    class FakePipe:
+        def __init__(self):
+            self.count = 0
 
-    # Save and toggle settings
-    prev = {
-        "enabled": settings.rate_limit_enabled,
-        "requests": settings.rate_limit_requests,
-        "period": settings.rate_limit_period_seconds,
-        "redis_url": settings.rate_limit_redis_url,
-    }
+        def incr(self, key, n):
+            self.count += int(n)
+            return self
+
+        def expire(self, key, ttl):
+            return self
+
+        def execute(self):
+            return (self.count, None)
+
+    class FakeRedis:
+        def pipeline(self):
+            return FakePipe()
+
+    class FakeStrict:
+        @staticmethod
+        def from_url(url):
+            return FakeRedis()
+
+    # Enable redis limiter and inject a fake redis module without requiring dependency
     settings.rate_limit_enabled = True
     settings.rate_limit_requests = 1
-    settings.rate_limit_period_seconds = 2
-    settings.rate_limit_redis_url = url
-
-    # Isolate test DB and ensure clean window
-    r = redis.StrictRedis.from_url(url)
+    settings.rate_limit_period_seconds = 60
+    settings.rate_limit_redis_url = "redis://localhost:6379/0"
+    _RL_STATE.clear()
+    fake_mod = ModuleType("redis")
+    fake_mod.StrictRedis = FakeStrict  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "redis", fake_mod)
     try:
-        r.flushdb()
-
-        # First request should pass
-        resp1 = client.get("/health")
-        assert resp1.status_code == 200
-
-        # Second request in same window should hit 429
-        resp2 = client.get("/health")
-        assert resp2.status_code == 429
-
-        # After period, should reset window and allow again
-        time.sleep(settings.rate_limit_period_seconds)
-        resp3 = client.get("/health")
-        assert resp3.status_code == 200
+        c = TestClient(app)
+        r1 = c.get("/health")
+        assert r1.status_code == 200
+        r2 = c.get("/health")
+        assert r2.status_code == 429
+        # Metrics include rate-limited counter
+        metrics = c.get("/metrics").text
+        assert "http_rate_limited_total" in metrics
     finally:
-        # Cleanup and restore
-        try:
-            r.flushdb()
-        except Exception:
-            pass
-        settings.rate_limit_enabled = prev["enabled"]
-        settings.rate_limit_requests = prev["requests"]
-        settings.rate_limit_period_seconds = prev["period"]
-        settings.rate_limit_redis_url = prev["redis_url"]
+        # cleanup
+        settings.rate_limit_enabled = False
+        settings.rate_limit_redis_url = None
+        _RL_STATE.clear()
+
+
+def test_rate_limit_redis_fallback_to_memory(monkeypatch):
+    from app.main import app, settings, _RL_STATE
+
+    class BoomStrict:
+        @staticmethod
+        def from_url(url):
+            raise RuntimeError("redis down")
+
+    settings.rate_limit_enabled = True
+    settings.rate_limit_requests = 1
+    settings.rate_limit_period_seconds = 60
+    settings.rate_limit_redis_url = "redis://localhost:6379/0"
+    _RL_STATE.clear()
+    fake_mod = ModuleType("redis")
+    fake_mod.StrictRedis = BoomStrict  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "redis", fake_mod)
+
+    try:
+        c = TestClient(app)
+        r1 = c.get("/health")
+        assert r1.status_code == 200
+        r2 = c.get("/health")
+        assert r2.status_code == 429
+    finally:
+        settings.rate_limit_enabled = False
+        settings.rate_limit_redis_url = None
+        _RL_STATE.clear()
