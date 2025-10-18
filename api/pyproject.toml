@@ -15,7 +15,7 @@ dependencies = [
   "pandas==2.2.3",
   "scikit-learn==1.4.2",
   "scipy==1.12.0",
-  "orjson==3.10.7",
+  "orjson==3.11.3",
   "typing-extensions==4.12.2",
   "prometheus-client==0.20.0",
   "PyYAML==6.0.2"
