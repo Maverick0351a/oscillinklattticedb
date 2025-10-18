@@ -47,6 +47,11 @@ jobs:
         run: |
           coverage report --fail-under=95
 
+      - name: Generate coverage XML (for Codecov)
+        if: always()
+        run: |
+          coverage xml
+
       - name: Build HTML coverage report
         if: always()
         run: |
@@ -59,3 +64,12 @@ jobs:
           name: coverage-html
           path: api/coverage_html
           if-no-files-found: warn
+
+      - name: "Upload to Codecov (flag: api)"
+        if: always()
+        uses: codecov/codecov-action@v4
+        with:
+          files: api/coverage.xml
+          flags: api
+          fail_ci_if_error: false
+          verbose: true
