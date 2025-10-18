@@ -56,6 +56,13 @@ jobs:
           cache-dependency-path: ui/package.json
       - name: Install
         run: npm ci || npm i
-      - name: Build
-        run: npm run build
+      - name: Test with coverage
+        run: npm run test:coverage
+      - name: Upload UI coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          directory: ui
+          flags: ui
+          fail_ci_if_error: false
+          verbose: true
  

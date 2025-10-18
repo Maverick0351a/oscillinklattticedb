@@ -10,6 +10,7 @@ Deterministic receipts, Merkle‑root verification, and a lattice‑of‑lattice
 [![codecov](https://codecov.io/gh/Maverick0351a/oscillinklattticedb/branch/main/graph/badge.svg)](https://codecov.io/gh/Maverick0351a/oscillinklattticedb)
 [![API tests](https://github.com/Maverick0351a/oscillinklattticedb/actions/workflows/api-tests.yml/badge.svg)](https://github.com/Maverick0351a/oscillinklattticedb/actions/workflows/api-tests.yml)
 [![codecov API](https://codecov.io/gh/Maverick0351a/oscillinklattticedb/branch/main/graph/badge.svg?flag=api)](https://app.codecov.io/gh/Maverick0351a/oscillinklattticedb/flags/api)
+[![codecov UI](https://codecov.io/gh/Maverick0351a/oscillinklattticedb/branch/develop/graph/badge.svg?flag=ui)](https://app.codecov.io/gh/Maverick0351a/oscillinklattticedb/flags/ui)
 [![Release](https://img.shields.io/github/v/release/Maverick0351a/oscillinklattticedb?display_name=tag)](https://github.com/Maverick0351a/oscillinklattticedb/releases)
 [![License: BUSL‑1.1](/badges/license_busl.svg)](/LICENSE-LATTICEDB)
 [![Docs](https://img.shields.io/badge/docs-README-blue)](#-documentation)
