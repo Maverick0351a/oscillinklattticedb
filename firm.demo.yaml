@@ -1,0 +1,9 @@
+version: 1
+backend_switch:
+  enable: true
+  thresholds:
+    size_mb: 0.001  # tiny to trigger in demo
+    chunks: 1
+  target: faiss
+receipts:
+  include_leaves: true

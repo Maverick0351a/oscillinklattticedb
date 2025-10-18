@@ -1,0 +1,28 @@
+{
+  "version": "1",
+  "db_root": "3c067a25e97104c4800c58632ecd8bdc83f232830bcb30f78a5ae0d7706e2420",
+  "lattice_ids": [
+    "L-000001",
+    "L-000002",
+    "L-000003",
+    "L-000004"
+  ],
+  "edge_hash_composite": "2f7f2b2d4f994e6abd593b71f5e28fe65b71d59e34f4134ad2037e5d037f746d",
+  "deltaH_total": 3.782022640109062,
+  "cg_iters": 3,
+  "final_residual": 2.813393109590834e-7,
+  "epsilon": 0.001,
+  "tau": 0.3,
+  "filters": {},
+  "embed_model": null,
+  "embed_dim": null,
+  "prompt_format": null,
+  "hf_rev": null,
+  "model_sha256": "stub-model-sha256",
+  "tokenizer_sha256": null,
+  "device": null,
+  "batch_size": null,
+  "pooling": null,
+  "strict_hash": null,
+  "state_sig": "5550f02a2cb36ae9b59750a86176ad2bb44125aadfdf52ab481d82aada232f7c"
+}

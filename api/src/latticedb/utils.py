@@ -1,0 +1,80 @@
+import hashlib
+import json
+import os
+import random
+from typing import Any, Iterable, List, Dict
+from pathlib import Path
+import tempfile
+import io
+
+RANDOM_SEED = int(os.environ.get("LATTICEDB_SEED","1337"))
+
+def stable_hash(s: str) -> str:
+    return hashlib.sha256(s.encode("utf-8")).hexdigest()
+
+def canonical_json(obj: Any) -> str:
+    return json.dumps(obj, sort_keys=True, separators=(",",":"))
+
+def state_sig(obj: Any) -> str:
+    return hashlib.sha256(canonical_json(obj).encode("utf-8")).hexdigest()
+
+def set_determinism():
+    random.seed(RANDOM_SEED)
+    os.environ.setdefault("PYTHONHASHSEED", "0")
+
+
+def atomic_write_bytes(path: Path, data: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as tmp:
+        tmp.write(data)
+        tmp.flush()
+        os.fsync(tmp.fileno())
+        tmp_path = Path(tmp.name)
+    tmp_path.replace(path)
+
+
+def atomic_write_text(path: Path, text: str, encoding: str = "utf-8") -> None:
+    atomic_write_bytes(path, text.encode(encoding))
+
+
+def append_jsonl(path: Path, obj: Any, encoding: str = "utf-8") -> None:
+    """Append a single JSON line to a file, creating parents if needed.
+
+    This is a simple append (WAL-like); callers should keep records small.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding=encoding, newline="\n") as f:
+        f.write(json.dumps(obj) + "\n")
+
+
+class Manifest:
+    """Simple manifest over groups/lattices; minimal API for router and receipts.
+
+    Stored as a Parquet file for simplicity; can be swapped for sqlite later.
+    """
+
+    def __init__(self, root: Path):
+        self.root = root
+        self.path = root / "manifest.parquet"
+
+    def append(self, entries: Iterable[dict[str, Any]]) -> None:
+        import pandas as pd
+        df_new = pd.DataFrame(list(entries))
+        if self.path.exists():
+            df_old = pd.read_parquet(self.path)
+            df = pd.concat([df_old, df_new], ignore_index=True)
+        else:
+            df = df_new
+        buf = io.BytesIO()
+        df.to_parquet(buf, index=False)
+        atomic_write_bytes(self.path, buf.getvalue())
+
+    def list_lattices(self) -> List[Dict[str, Any]]:
+        if not self.path.exists():
+            return []
+        import pandas as pd
+        df = pd.read_parquet(self.path)
+        recs_any = df.to_dict(orient="records")
+        # Ensure keys are strings for type checker and consistency
+        recs: List[Dict[str, Any]] = [ {str(k): v for k, v in r.items()} for r in recs_any ]
+        return recs

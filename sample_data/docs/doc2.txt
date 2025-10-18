@@ -1,0 +1,2 @@
+Oscilius formalizes energy-minimizing cognitive dynamics for retrieval and memory.
+It yields unique minimizers and exact energy accounting under SPD conditions.

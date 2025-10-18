@@ -1,0 +1,39 @@
+Metadata-Version: 2.4
+Name: oscillink-latticedb
+Version: 0.1.0
+Summary: Local lattice-of-lattices RAG database scaffold with receipts and verification
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: fastapi==0.111.0
+Requires-Dist: uvicorn[standard]==0.30.6
+Requires-Dist: pydantic==2.7.4
+Requires-Dist: pydantic-settings==2.4.0
+Requires-Dist: PyJWT==2.10.1
+Requires-Dist: numpy==1.26.4
+Requires-Dist: pyarrow==16.1.0
+Requires-Dist: pandas==2.2.3
+Requires-Dist: scikit-learn==1.4.2
+Requires-Dist: scipy==1.12.0
+Requires-Dist: orjson==3.10.7
+Requires-Dist: typing-extensions==4.12.2
+Requires-Dist: prometheus-client==0.20.0
+Requires-Dist: PyYAML==6.0.2
+Provides-Extra: dev
+Requires-Dist: pytest==8.2.2; extra == "dev"
+Requires-Dist: pytest-cov==5.0.0; extra == "dev"
+Requires-Dist: httpx==0.27.2; extra == "dev"
+Requires-Dist: requests==2.32.3; extra == "dev"
+Requires-Dist: ruff==0.5.7; extra == "dev"
+Requires-Dist: pre-commit==3.7.1; extra == "dev"
+Requires-Dist: pooch==1.8.2; extra == "dev"
+Requires-Dist: pdfminer.six==20231228; extra == "dev"
+Requires-Dist: python-docx==1.1.2; extra == "dev"
+Requires-Dist: faiss-cpu>=1.7.4; extra == "dev"
+Requires-Dist: psutil>=5.9.0; extra == "dev"
+Provides-Extra: embeddings
+Requires-Dist: transformers==4.44.2; extra == "embeddings"
+Requires-Dist: torch>=2.0.0; extra == "embeddings"
+Requires-Dist: sentencepiece>=0.1.99; extra == "embeddings"
+Requires-Dist: accelerate>=0.33.0; extra == "embeddings"
+
+Backend for Oscillink LatticeDB scaffold.

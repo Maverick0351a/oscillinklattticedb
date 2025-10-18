@@ -1,0 +1,52 @@
+name: docker-ci
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build API image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.api
+          push: false
+          tags: local/oscillink-api:ci
+
+      - name: Build UI image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.ui
+          push: false
+          tags: local/oscillink-ui:ci
+
+      - name: Run Trivy scan (API)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: local/oscillink-api:ci
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+
+      - name: Run Trivy scan (UI)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: local/oscillink-ui:ci
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true

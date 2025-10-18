@@ -1,0 +1,135 @@
+# Production overrides
+image:
+  api:
+    tag: latest
+  ui:
+    tag: latest
+
+autoscaling:
+  api:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+  ui:
+    enabled: true
+
+resources:
+  api:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: 2
+      memory: 2Gi
+  ui:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 1
+      memory: 1Gi
+
+ingress:
+  enabled: true
+  split: true
+  ui:
+    className: nginx
+    hosts:
+      - host: app.example.com
+        path: /
+        pathType: Prefix
+    tls:
+      - secretName: app-tls
+        hosts: [app.example.com]
+  api:
+    className: nginx
+    hosts:
+      - host: api.example.com
+        path: /api
+        pathType: Prefix
+    tls:
+      - secretName: api-tls
+        hosts: [api.example.com]
+
+api:
+  env:
+    LATTICEDB_JWT_ENABLED: "true"
+    LATTICEDB_JWT_ALGORITHMS: "RS256"
+    LATTICEDB_JWT_JWKS_URL: "https://issuer.example.com/.well-known/jwks.json"
+    LATTICEDB_JWT_ISSUER: "https://issuer.example.com"
+    LATTICEDB_JWT_AUDIENCE: "oscillink"
+    LATTICEDB_RATE_LIMIT_ENABLED: "true"
+    LATTICEDB_TRUST_X_FORWARDED_FOR: "true"
+    LATTICEDB_ENABLE_HSTS: "true"
+    LATTICEDB_OTEL_ENABLED: "false"
+  # SPD (prod defaults; tune with caution)
+  LATTICEDB_SPD_DIM: "32"
+  LATTICEDB_SPD_K_NEIGHBORS: "4"
+  LATTICEDB_SPD_LAMBDA_G: "1.0"
+  LATTICEDB_SPD_LAMBDA_C: "0.5"
+  LATTICEDB_SPD_LAMBDA_Q: "4.0"
+  LATTICEDB_SPD_TOL: "1e-5"
+  LATTICEDB_SPD_MAX_ITER: "256"
+  volume:
+    enabled: true
+    size: 10Gi
+  # Example scheduling and security overrides (uncomment to use)
+  # nodeSelector:
+  #   topology.kubernetes.io/zone: us-east-1a
+  # tolerations:
+  #   - key: "workload"
+  #     operator: "Equal"
+  #     value: "backend"
+  #     effect: "NoSchedule"
+  # affinity:
+  #   podAntiAffinity:
+  #     preferredDuringSchedulingIgnoredDuringExecution:
+  #       - weight: 100
+  #         podAffinityTerm:
+  #           labelSelector:
+  #             matchExpressions:
+  #               - key: app.kubernetes.io/component
+  #                 operator: In
+  #                 values: ["api"]
+  #           topologyKey: kubernetes.io/hostname
+  # topologySpreadConstraints:
+  #   - maxSkew: 1
+  #     topologyKey: topology.kubernetes.io/zone
+  #     whenUnsatisfiable: ScheduleAnyway
+  #     labelSelector:
+  #       matchLabels:
+  #         app.kubernetes.io/component: api
+
+redis:
+  enabled: true
+
+# Optional NetworkPolicy examples
+networkPolicy:
+  enabled: true
+  api:
+    ingress:
+      from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: ingress-nginx
+    egress:
+      allowClusterDNS: true
+      allowRedis: true
+      extra: []
+  ui:
+    ingress:
+      from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: ingress-nginx
+    egress:
+      allowClusterDNS: true
+      allowAPIOnly: true
+      extra: []

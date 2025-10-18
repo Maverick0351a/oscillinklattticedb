@@ -1,0 +1,23 @@
+base_dir: bench/assets
+files:
+- url: https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf
+  sha256: 3df79d34abbca99308e79cb94461c1893582604d68329a41fd4bec1885e6adb4
+  path: pdfs/dummy.pdf
+- url: https://filesamples.com/samples/document/docx/sample3.docx
+  sha256: 58211ac149c4b05110cb95959f0f5f529333af5aea060d5a5baf096f531848b8
+  path: docx/sample3.docx
+- url: https://raw.githubusercontent.com/mwaskom/seaborn-data/master/tips.csv
+  sha256: e54cc4d2ce1bff65d32ca60b3e4b802e06bde1d7e7caf6f796f6bf7370e863b0
+  path: csv/tips.csv
+- url: null
+  sha256: e0ff98598313731ac85f5b9835adecd1417004de4e4887fac2940770ff3fce67
+  path: vendor/csv/iris.csv
+- url: null
+  sha256: e2e436a6f6cb6dd16bf95bf4c4a8adfd20d9c2f22e78d09524e03c44e19aa972
+  path: vendor/html/sample.html
+- url: null
+  sha256: 725517bacf5f8de0705aa159ba9de9d7260dd10e56c57cc8548e40c5b0905c71
+  path: vendor/eml/sample.eml
+- url: null
+  sha256: 536fb7a9b31021e739c90b496a4d527e165727a033978b6ed97ea51a43f9ecc0
+  path: vendor/txt/sample.txt

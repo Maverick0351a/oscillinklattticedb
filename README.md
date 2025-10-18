@@ -8,6 +8,8 @@ Deterministic receipts, Merkle‑root verification, and a lattice‑of‑lattice
 
 [![CI](https://github.com/Maverick0351a/oscillinklattticedb/actions/workflows/ci.yml/badge.svg)](https://github.com/Maverick0351a/oscillinklattticedb/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/Maverick0351a/oscillinklattticedb/branch/main/graph/badge.svg)](https://codecov.io/gh/Maverick0351a/oscillinklattticedb)
+[![API tests](https://github.com/Maverick0351a/oscillinklattticedb/actions/workflows/api-tests.yml/badge.svg)](https://github.com/Maverick0351a/oscillinklattticedb/actions/workflows/api-tests.yml)
+[![codecov API](https://codecov.io/gh/Maverick0351a/oscillinklattticedb/branch/main/graph/badge.svg?flag=api)](https://app.codecov.io/gh/Maverick0351a/oscillinklattticedb/flags/api)
 [![Release](https://img.shields.io/github/v/release/Maverick0351a/oscillinklattticedb?display_name=tag)](https://github.com/Maverick0351a/oscillinklattticedb/releases)
 [![License: BUSL‑1.1](/badges/license_busl.svg)](/LICENSE-LATTICEDB)
 [![Docs](https://img.shields.io/badge/docs-README-blue)](#-documentation)
@@ -110,3 +112,41 @@ Tip: The watcher can run in the background so dropping files triggers ingest aut
 ## Benchmarks (what matters and how to run them)
 
 See README in the repo root for detailed benchmark tasks and SLOs.
+
+## Test coverage
+
+We keep tight, deterministic tests around the FastAPI service in `api/app/main.py` and gate PRs at 95% line coverage (branch coverage enabled).
+
+- In VS Code: run the task “API: Coverage (HTML)”. It executes the suite under coverage and writes a browsable report to `api/coverage_html/index.html`.
+- CLI (Windows PowerShell):
+
+```powershell
+Set-Location "api"; python -m pip install -U pip; pip install -e .[dev]; `
+coverage run -m pytest; coverage report; coverage html
+# Open the report
+Start-Process .\coverage_html\index.html
+```
+
+- CLI (macOS/Linux):
+
+```bash
+cd api
+python -m pip install -U pip
+pip install -e .[dev]
+coverage run -m pytest
+coverage report
+coverage html
+open coverage_html/index.html  # macOS
+xdg-open coverage_html/index.html  # Linux
+```
+
+In CI, we enforce `coverage report --fail-under=95` and upload the HTML report as an artifact for inspection.
+
+## Licensing
+
+This repository is provided under the Business Source License 1.1 (BUSL-1.1). See `LICENSE-LATTICEDB` for the full terms and Additional Use Grant.
+
+- Change Date: 2029-10-16, after which the license converts to MIT for covered files.
+- SPDX identifier to use in headers: `BUSL-1.1`.
+
+If you have specific licensing or usage questions, please open an issue.

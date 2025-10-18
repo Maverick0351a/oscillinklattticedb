@@ -1,0 +1,17 @@
+{
+  "version": "1",
+  "shard_id": "shard-root",
+  "path": ".",
+  "size_bytes": 5950,
+  "file_count": 4,
+  "active_backend": "faiss",
+  "centroid_hash": null,
+  "sealed": true,
+  "index_meta": {
+    "dim": 384,
+    "nvec": 4,
+    "type": "flat_l2"
+  },
+  "index_sha256": "b2d1bc2b408ccffc446cc70660b66039b9f02434b8fbc0f8016111909a479ded",
+  "state_sig": "95c06dd3de0a53b7cfccecea4eeed26010b1bf56d4e886eb9b75e9b07b8e96f7"
+}

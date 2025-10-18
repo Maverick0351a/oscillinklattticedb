@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyc
+*.pkl
+*.so
+*.dylib
+.venv/
+.env
+.env.*
+*.env
+.pytest_cache/
+.coverage*
+coverage.xml
+coverage_html/
+.mypy_cache/
+ruff_cache/
+
+# Node
+node_modules/
+dist/
+build/
+.npm/
+.pnpm-store/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Bench and artifacts
+_bench/
+bench/assets/vendor/
+
+# Docker
+*.local

@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "shard_id": "shard-root",
+  "dim": 384,
+  "nvec": 4,
+  "type": "flat_l2"
+}

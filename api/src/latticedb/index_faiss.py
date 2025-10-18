@@ -1,0 +1,118 @@
+from __future__ import annotations
+
+import json
+import shutil
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Dict, List, Tuple
+
+import numpy as np
+
+from .utils import atomic_write_text
+
+
+@dataclass
+class IndexBuildResult:
+    dim: int
+    nvec: int
+    index_path: Path
+    meta_path: Path
+    postings_path: Path
+    index_sha256: str
+
+
+def _hash_file(path: Path) -> str:
+    import hashlib
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _load_manifest(manifest_path: Path) -> List[Dict[str, Any]]:
+    if not manifest_path.exists():
+        return []
+    import pandas as pd  # type: ignore
+    df = pd.read_parquet(manifest_path)
+    return [dict(r) for _, r in df.iterrows()]
+
+
+def _collect_vectors_for_shard(db_root: Path, shard_id: str) -> Tuple[np.ndarray, List[Dict[str, Any]]]:
+    """Collect vectors belonging to this shard by grouping manifest rows whose source_relpath is within the shard path."""
+    # For simplicity, use all lattice centroids within the DB as search vectors for the shard.
+    # Better: aggregate chunk vectors by shard; here we index group centroids to keep footprint small.
+    from .router import Router
+    C, ids = Router(db_root).load_centroids()
+    meta = [{"lattice_id": lid} for lid in ids]
+    return C.astype("float32"), meta
+
+
+def _dedup_by_key(X: np.ndarray, meta: List[Dict[str, Any]], key: str = "lattice_id") -> Tuple[np.ndarray, List[Dict[str, Any]]]:
+    seen = set()
+    keep_idx: List[int] = []
+    for i, m in enumerate(meta):
+        k = m.get(key)
+        if k in seen:
+            continue
+        seen.add(k)
+        keep_idx.append(i)
+    if not keep_idx:
+        return X[:0], []
+    idx = np.array(keep_idx, dtype=np.int64)
+    return X[idx], [meta[i] for i in idx]
+
+
+def build_faiss_index_for_shard(db_root: Path, shard_id: str) -> IndexBuildResult:
+    """Build a FAISS flat L2 index for a shard with atomic promote/seal.
+
+    Layout under db_root/indexes/<shard_id>:
+      - staging/ (temp)
+      - sealed/ (final active)
+      - postings.jsonl (metadata per vector)
+      - meta.json (index metadata)
+    """
+    import faiss  # type: ignore
+
+    idx_root = db_root / "indexes" / shard_id
+    staging = idx_root / "staging"
+    sealed = idx_root / "sealed"
+    idx_root.mkdir(parents=True, exist_ok=True)
+    if staging.exists():
+        shutil.rmtree(staging, ignore_errors=True)
+    staging.mkdir(parents=True, exist_ok=True)
+
+    # Collect vectors and meta
+    X, meta = _collect_vectors_for_shard(db_root, shard_id)
+    X, meta = _dedup_by_key(X, meta, key="lattice_id")
+    n, d = (int(X.shape[0]), int(X.shape[1])) if X.size else (0, 0)
+
+    # Build FAISS index (FlatL2)
+    index = faiss.IndexFlatL2(d) if d > 0 else faiss.IndexFlatL2(1)
+    if n:
+        index.add(X)
+
+    # Write index to staging
+    idx_path = staging / "index.faiss"
+    faiss.write_index(index, str(idx_path))
+
+    # Write postings (simple JSONL per vector)
+    postings_path = staging / "postings.jsonl"
+    with postings_path.open("w", encoding="utf-8") as f:
+        for m in meta:
+            f.write(json.dumps(m) + "\n")
+
+    # Write meta
+    meta_obj = {"version": 1, "shard_id": shard_id, "dim": d, "nvec": n, "type": "flat_l2"}
+    meta_path = staging / "meta.json"
+    atomic_write_text(meta_path, json.dumps(meta_obj, indent=2))
+
+    # Compute checksum of index file for receipt
+    idx_sha = _hash_file(idx_path)
+
+    # Promote: replace sealed with staging atomically (best-effort on Windows)
+    if sealed.exists():
+        shutil.rmtree(sealed, ignore_errors=True)
+    staging.replace(sealed)
+
+    return IndexBuildResult(dim=d, nvec=n, index_path=sealed / "index.faiss", meta_path=sealed / "meta.json", postings_path=sealed / "postings.jsonl", index_sha256=idx_sha)

@@ -1,0 +1,8 @@
+{"ts": "2025-10-17T02:20:39.359177+00:00", "event": "ingest_ok", "lattice_id": "L-000001", "group_id": "G-000001", "file_sha256": "1555cf7babadfe183c8a5bb04285b92eebb20d619c350acda13b5bdf9a6547d4", "chunks": 9}
+{"ts": "2025-10-17T02:20:39.439399+00:00", "event": "ingest_ok", "lattice_id": "L-000002", "group_id": "G-000002", "file_sha256": "205bd2f086839914904870dedf5106a7c0708391228fd0159a5ad86bb0b8587a", "chunks": 5}
+{"ts": "2025-10-17T02:20:39.467378+00:00", "event": "ingest_ok", "lattice_id": "L-000003", "group_id": "G-000003", "file_sha256": "d8102315b78cf85eb39a14c07813ea127ba16de64086bc11f608ce65399e01ba", "chunks": 1}
+{"ts": "2025-10-17T02:20:39.602782+00:00", "event": "ingest_ok", "lattice_id": "L-000004", "group_id": "G-000004", "file_sha256": "635efc20a6b43aca98ac3e3f8b42ba7f4e2b0ed3f09505cff521fc9afce7a3c2", "chunks": 9}
+{"ts": "2025-10-17T02:24:39.228548+00:00", "event": "dedup_skip", "source": "csv_tips.txt", "file_sha256": "1555cf7babadfe183c8a5bb04285b92eebb20d619c350acda13b5bdf9a6547d4"}
+{"ts": "2025-10-17T02:24:39.235755+00:00", "event": "dedup_skip", "source": "docx_sample3.txt", "file_sha256": "205bd2f086839914904870dedf5106a7c0708391228fd0159a5ad86bb0b8587a"}
+{"ts": "2025-10-17T02:24:39.238728+00:00", "event": "dedup_skip", "source": "pdfs_dummy.txt", "file_sha256": "d8102315b78cf85eb39a14c07813ea127ba16de64086bc11f608ce65399e01ba"}
+{"ts": "2025-10-17T02:24:39.238728+00:00", "event": "dedup_skip", "source": "vendor_csv_iris.txt", "file_sha256": "635efc20a6b43aca98ac3e3f8b42ba7f4e2b0ed3f09505cff521fc9afce7a3c2"}

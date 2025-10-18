@@ -1,0 +1,30 @@
+{
+  "version": "1",
+  "lattice_id": "L-000004",
+  "group_id": "G-000004",
+  "file_sha256": "635efc20a6b43aca98ac3e3f8b42ba7f4e2b0ed3f09505cff521fc9afce7a3c2",
+  "embed_model": "bge-small-en-v1.5",
+  "embed_dim": 384,
+  "prompt_format": {
+    "doc": "passage: {text}",
+    "query": "query: {text}"
+  },
+  "hf_rev": null,
+  "model_sha256": "stub-model-sha256",
+  "tokenizer_sha256": null,
+  "device": "cpu",
+  "batch_size": 32,
+  "pooling": "mean",
+  "strict_hash": false,
+  "dim": 384,
+  "lambda_G": 1.0,
+  "lambda_C": 0.5,
+  "lambda_Q": 4.0,
+  "edge_hash": "fc9e3c60d997fa2cec8a33af8a743541743b86f652dc96dfa5aedb4a1fe5866e",
+  "deltaH_total": 6.004219263792038,
+  "cg_iters": 8,
+  "final_residual": 9.93594676401699e-6,
+  "ocr_avg_confidence": null,
+  "ocr_low_confidence": null,
+  "state_sig": "a6950808f3d9d5d7003e31ee044d144cf76be5ce0d5cff4b104728039f3fd5f0"
+}
