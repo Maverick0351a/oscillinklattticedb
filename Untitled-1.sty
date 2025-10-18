@@ -1,0 +1,408 @@
+\documentclass[11pt]{article}
+
+% ------------------------------------------------------------
+% Packages
+% ------------------------------------------------------------
+\usepackage[margin=1in]{geometry}
+\usepackage{lmodern}
+\usepackage[T1]{fontenc}
+\usepackage{microtype}
+\usepackage{amsmath, amssymb, amsthm, bm, mathtools}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage[nameinlink,capitalize]{cleveref}
+\usepackage{graphicx}
+\usepackage{array}
+\usepackage{siunitx}
+\usepackage{xcolor}
+\usepackage{listings}
+\lstset{basicstyle=\ttfamily\small,breaklines=true}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!60!black,
+  citecolor=blue!60!black,
+  urlcolor=blue!60!black
+}
+
+% ------------------------------------------------------------
+% Theorem-like environments
+% ------------------------------------------------------------
+\newtheorem{definition}{Definition}
+\newtheorem{assumption}{Assumption}
+\newtheorem{proposition}{Proposition}
+\newtheorem{remark}{Remark}
+
+% ------------------------------------------------------------
+% Macros
+% ------------------------------------------------------------
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\1}{\mathbf{1}}
+\newcommand{\T}{^\top}
+\newcommand{\norm}[1]{\left\lVert #1 \right\rVert}
+\DeclareMathOperator{\tr}{tr}
+\DeclareMathOperator{\diag}{diag}
+
+% ------------------------------------------------------------
+% Title
+% ------------------------------------------------------------
+\title{\textbf{Oscillink LatticeDB}\\
+\large Deterministic, Explainable Retrieval with a Lattice-of-Lattices Coherence Layer}
+
+\author{Oscillink Team}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+\textbf{Oscillink LatticeDB} is a local-first Retrieval-Augmented Generation (RAG) system that
+organizes firm-specific content into \emph{micro-lattices} and composes them via a \emph{lattice-of-lattices} coherence layer.
+Every retrieval decision is auditable with \emph{deterministic receipts}: signed hashes, energy drops,
+and solver diagnostics. The math is a strictly convex energy minimization with SPD guarantees solved by
+preconditioned Conjugate Gradients. We formalize the micro-lattice energy, the composite (centroid) energy,
+per-node energy attribution for explainable ranking, abstention gates, and Merkle-root verification of the
+database receipt. The system runs entirely on a single machine or VM, supports OCR quality governance,
+and ships with deterministic ingestion (extract $\to$ chunk $\to$ embed $\to$ index). We include complexity
+considerations, acceptance criteria, and a practical evaluation plan.
+\end{abstract}
+
+\vspace{-0.25em}
+\tableofcontents
+\vspace{0.75em}
+
+% ------------------------------------------------------------
+\section{Introduction}
+\label{sec:intro}
+Conventional RAG stacks depend on static dense similarity and ANN search. They are fast but
+offer limited coherence guarantees, weak provenance, and non-deterministic outcomes.
+\emph{Oscillink LatticeDB} addresses these gaps with:
+(i) a physics-inspired, \emph{strictly convex} energy on a mutual-\(k\)NN graph,
+(ii) a \emph{lattice-of-lattices} composition to reason over subdomains,
+(iii) deterministic receipts and Merkle verification, and
+(iv) local-first deployment with OCR quality governance and abstention.
+
+\paragraph{Contributions.}
+\begin{itemize}[leftmargin=1.3em]
+  \item A micro-lattice energy \(H(U)\) that couples grounding, graph coherence, and query pinning, with SPD normal equations.
+  \item A composite energy \(H_{\mathcal{L}}(V)\) over micro-lattice centroids enabling \emph{lattice-of-lattices} reasoning.
+  \item Exact energy accounting: per-node attribution \(\Delta H_i\) and global \(\Delta H_{\text{total}}\) supporting faithful scoring.
+  \item Deterministic receipts: edge hashes, energy drops, CG diagnostics, and a Merkle-root database receipt.
+  \item A practical pipeline: deterministic ingestion, embedding model choices, OCR governance, gating/abstain policy, and evaluation criteria.
+\end{itemize}
+
+% ------------------------------------------------------------
+\section{System Overview}
+\label{sec:overview}
+\textbf{LatticeDB} organizes documents into micro-lattices (e.g., by folder, matter, or topic) and builds a centroid graph across them.
+
+\paragraph{Pipeline (local, no egress).}
+\begin{enumerate}[leftmargin=1.3em]
+  \item \textbf{Ingest}: Extract (pdfminer/office/html/csv/xlsx/eml/mbox), optional OCR fallback, deterministic chunking.
+  \item \textbf{Embed}: CPU-first encoder (e.g., BGE-small 384d); persist model hashes and prompt format.
+  \item \textbf{Index}: Build micro-lattices (graph + receipts); compute centroids; compute DB Merkle-root.
+  \item \textbf{Query}: Route to candidate micro-lattices, \emph{compose} via centroid energy, then rank chunks by coherent scores; gate/abstain as needed.
+  \item \textbf{Audit}: Return citations + receipts; verify composite receipt against DB Merkle-root.
+\end{enumerate}
+
+% ------------------------------------------------------------
+\section{Mathematical Model: Micro-Lattice}
+\label{sec:micro}
+Let \(X\in\R^{n\times d}\) be unit-norm embeddings of \(n\) chunks and \(\psi\in\R^d\) be a unit-norm query embedding.
+Let \(A\in\R^{n\times n}\) be a symmetric non-negative adjacency (mutual-\(k\)NN), \(D=\diag(A\mathbf{1})\), and \(L=D-A\) the (unnormalized) graph Laplacian.
+Let \(b\in\R_{\ge 0}^n\) be pinning weights (top-\(K\) softmax), and \(B=\diag(b)\).
+
+\subsection{Energy}
+We minimize the strictly convex energy
+\begin{equation}
+\label{eq:micro_energy}
+H(U)
+= \lambda_G \, \|U-X\|_F^2
++ \lambda_C \, \tr(U\T L\,U)
++ \lambda_Q \,\tr\!\big((U - \1\psi\T)\T B (U - \1\psi\T)\big),
+\end{equation}
+where \(U\in\R^{n\times d}\) is the coherent state, with weights \(\lambda_G>0\), \(\lambda_C\ge 0\), \(\lambda_Q\ge 0\).
+
+\subsection{Normal Equations (SPD)}
+Setting \(\nabla_U H=0\) yields
+\begin{equation}
+\label{eq:micro_spd}
+MU^\star
+= \lambda_G X + \lambda_Q B\,\1\psi\T,
+\qquad
+M := \lambda_G I + \lambda_C L + \lambda_Q B.
+\end{equation}
+\begin{proposition}[SPD]
+\label{prop:spd}
+If \(\lambda_G>0\), \(L\succeq 0\), and \(B\succeq 0\), then \(M\succ 0\).
+\end{proposition}
+\begin{proof}
+For any \(v\neq 0\),
+\(v\T M v = \lambda_G \norm{v}^2 + \lambda_C v\T L v + \lambda_Q v\T B v > 0\).
+\end{proof}
+Thus we solve \cref{eq:micro_spd} by (preconditioned) Conjugate Gradients (CG) per column or in block form.
+
+\subsection{Deterministic Construction}
+\label{sec:deterministic}
+\begin{itemize}[leftmargin=1.3em]
+  \item \textbf{Graph:} cosine similarity \(s_{ij}=x_i\T x_j\) (unit-norm).
+  For each \(i\) choose top-\(k\) by stable key \((\!-s_{ij},\,j)\); keep edges only if mutual; symmetrize.
+  \item \textbf{Pinning:} \(s_i=x_i\T\psi\). Let \(\mathcal{S}\) be top-\(K\) by stable key \((\!-s_i,\,i)\).
+  Set \(b_i=\exp(s_i/\tau)/\sum_{j\in\mathcal{S}}\exp(s_j/\tau)\) for \(i\in\mathcal{S}\), else 0.
+  \item \textbf{Numerics:} float32, fixed tol \(\approx 10^{-3}\), max iters, Jacobi preconditioner.
+\end{itemize}
+
+\subsection{Exact Energy Accounting and Per-Node Attribution}
+\label{sec:accounting}
+Define global energies at \(U=X\) and \(U^\star\):
+\begin{align}
+E_{\text{before}} &= \lambda_C\,\tr(X\T L X) + \lambda_Q \sum_i b_i \norm{x_i - \psi}^2, \\
+E_{\text{after}}  &= \lambda_G \norm{U^\star - X}_F^2 + \lambda_C\,\tr({U^\star}\T L U^\star)
+                     + \lambda_Q \sum_i b_i \norm{u_i^\star - \psi}^2.
+\end{align}
+The total improvement is
+\begin{equation}
+\label{eq:deltaH_total}
+\Delta H_{\text{total}} = E_{\text{before}} - E_{\text{after}} \ge 0.
+\end{equation}
+Per-node attribution (faithful, sums to \(\Delta H_{\text{total}}\) up to float error):
+\begin{align}
+\Delta H^{\text{anchor}}_i &= \lambda_Q b_i\left(\norm{x_i-\psi}^2 - \norm{u_i^\star-\psi}^2\right), \\
+\Delta H^{\text{coh}}_i    &= \tfrac{1}{2} \sum_{j} A_{ij} \left(\norm{x_i-x_j}^2 - \norm{u_i^\star - u_j^\star}^2\right), \\
+\Delta H_i                 &= \Delta H^{\text{coh}}_i + \Delta H^{\text{anchor}}_i - \lambda_G \norm{u_i^\star - x_i}^2.
+\end{align}
+
+\subsection{Scoring and Gating}
+\label{sec:scoring}
+For chunk \(i\), define a deterministic score
+\begin{equation}
+\text{score}_i = \alpha \,\frac{u_i^\star\T \psi}{\norm{u_i^\star}\norm{\psi}}
++ (1-\alpha)\, z(\Delta H_i),
+\end{equation}
+where \(z(\cdot)\) is a min--max normalizer over the subgraph and \(\alpha\in[0,1]\).
+Abstain when \(\Delta H_{\text{total}}<\varepsilon\) or \(\max_i \text{score}_i<\tau\).
+
+% ------------------------------------------------------------
+\section{Composite Model: Lattice-of-Lattices}
+\label{sec:composite}
+Let there be \(m\) micro-lattices; for lattice \(\ell\), let \(C_\ell=\frac{1}{|S_\ell|}\sum_{i\in S_\ell} u_i^\star \in\R^d\) be its centroid.
+Stack \(C\in\R^{m\times d}\) (rows unit-normalized). Build a centroid mutual-\(k\)NN graph
+\(A^{\mathcal{L}}\), Laplacian \(L^{\mathcal{L}}\), and centroid pinning \(b^{\mathcal{L}}\) from \(\cos(C_\ell,\psi)\) as in \cref{sec:deterministic}.
+
+\subsection{Composite Energy and SPD Solve}
+\begin{equation}
+\label{eq:comp_energy}
+H_{\mathcal{L}}(V) =
+\lambda_G^{\mathcal{L}} \norm{V - C}_F^2
++ \lambda_C^{\mathcal{L}} \tr(V\T L^{\mathcal{L}} V)
++ \lambda_Q^{\mathcal{L}} \tr\!\big((V - \1\psi\T)\T B^{\mathcal{L}} (V - \1\psi\T)\big),
+\end{equation}
+with SPD normal equations
+\begin{equation}
+M_{\mathcal{L}} V^\star = \lambda_G^{\mathcal{L}} C + \lambda_Q^{\mathcal{L}} B^{\mathcal{L}} \1 \psi\T,
+\quad
+M_{\mathcal{L}} = \lambda_G^{\mathcal{L}} I + \lambda_C^{\mathcal{L}} L^{\mathcal{L}} + \lambda_Q^{\mathcal{L}} B^{\mathcal{L}}.
+\end{equation}
+Define composite improvement \(\Delta H_{\mathcal{L}}\) analogously to \cref{eq:deltaH_total} (\(X\gets C,\, U^\star\gets V^\star\)).
+
+\paragraph{Usage.}
+Use \(V^\star\) to rank lattices; pull top chunks from top lattices by \(\text{score}_i\) in \cref{sec:scoring}, then deduplicate/diversify.
+
+% ------------------------------------------------------------
+\section{Algorithms}
+\label{sec:algorithms}
+
+\begin{algorithm}[H]
+\caption{Build Mutual-\(k\)NN (Deterministic)}
+\label{alg:knn}
+\begin{algorithmic}[1]
+\State \textbf{Input:} unit-normalized rows \(X\in\R^{n\times d}\), \(k\)
+\For{$i=1,\dots,n$}
+  \State compute $s_{ij}=x_i\T x_j$ for all $j$
+  \State select top-$k$ by stable key $(-s_{ij}, j)$
+\EndFor
+\State $A_{ij}= \max(0,s_{ij})$ if $i$ in top-$k$ of $j$ and $j$ in top-$k$ of $i$; else 0
+\State symmetrize $A\gets \max(A, A\T)$; $D=\diag(A\mathbf{1})$; $L=D-A$
+\State \textbf{return} $A,L$
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[H]
+\caption{Micro-Lattice Settle}
+\label{alg:micro}
+\begin{algorithmic}[1]
+\State \textbf{Input:} $X\in\R^{n\times d}$, query $\psi$, $k,K,\tau$, $\lambda_G,\lambda_C,\lambda_Q$
+\State $(A,L)\gets$ \textsc{BuildMutualKNN}$(X,k)$
+\State build $b$ from top-$K$ of $s_i=x_i\T\psi$ with softmax temperature $\tau$; $B=\diag(b)$
+\State $M=\lambda_G I + \lambda_C L + \lambda_Q B$, $RHS=\lambda_G X + \lambda_Q B\1\psi\T$
+\State solve $MU^\star = RHS$ by CG (float32, Jacobi preconditioner)
+\State compute per-node $\Delta H_i$ and total $\Delta H_{\text{total}}$
+\State compute $\text{score}_i$ and gate by $(\varepsilon,\tau)$
+\State \textbf{return} $U^\star$, scores, receipt fields (edge\_hash, $\Delta H_{\text{total}}$, cg\_iters, residual)
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[H]
+\caption{Composite Settle (Lattice-of-Lattices)}
+\label{alg:composite}
+\begin{algorithmic}[1]
+\State \textbf{Input:} centroids $C\in\R^{m\times d}$, query $\psi$, hyperparams
+\State $(A^\mathcal{L},L^\mathcal{L})\gets$ \textsc{BuildMutualKNN}$(C,k_\mathcal{L})$
+\State build $b^\mathcal{L}$ from $C_\ell\T\psi$ with top-$K_\mathcal{L}$ and softmax $\tau_\mathcal{L}$; $B^\mathcal{L}=\diag(b^\mathcal{L})$
+\State $M_\mathcal{L}=\lambda_G^\mathcal{L} I + \lambda_C^\mathcal{L} L^\mathcal{L} + \lambda_Q^\mathcal{L} B^\mathcal{L}$; $RHS=\lambda_G^\mathcal{L} C + \lambda_Q^\mathcal{L} B^\mathcal{L}\1\psi\T$
+\State solve $M_\mathcal{L} V^\star = RHS$ by CG; compute $\Delta H_\mathcal{L}$
+\State rank lattices; pull top chunks by $\text{score}_i$; diversify
+\State \textbf{return} composite receipt ($\Delta H_\mathcal{L}$, cg\_iters, residual) + context pack
+\end{algorithmic}
+\end{algorithm}
+
+% ------------------------------------------------------------
+\section{Determinism, Receipts, and Verification}
+\label{sec:receipts}
+\paragraph{Determinism.} Fix seeds and threads, use float32, stable multi-key sorts, canonical JSON
+serialization (sorted keys, tight separators), and record library/model hashes.
+
+\paragraph{Micro-Lattice Receipt.}
+\begin{itemize}[leftmargin=1.3em]
+  \item \texttt{edge\_hash}: SHA-256 of canonical edge list bytes (sorted pairs).
+  \item \(\Delta H_{\text{total}}\): scalar improvement; \texttt{cg\_iters}, \texttt{final\_residual}.
+  \item \texttt{state\_sig}: SHA-256 of the receipt minus the signature itself.
+\end{itemize}
+
+\paragraph{DB Receipt (Merkle).} Let \(s_\ell\) be each lattice \texttt{state\_sig}.
+Compute a Merkle root of leaves \(s_\ell\) and the database config hash.
+Store as \texttt{db\_receipt.root}. Verification recomputes and compares.
+
+\paragraph{Composite Receipt.} Include lattice IDs used, \(\Delta H_\mathcal{L}\), solver stats, and a \texttt{state\_sig}.
+The API returns composite + referenced micro-lattice receipts; clients can verify against the DB root.
+
+% ------------------------------------------------------------
+\section{OCR Quality Governance (Optional)}
+\label{sec:ocr}
+If OCR is used, aggregate per-page confidence into \(\texttt{ocr\_avg\_confidence}\in[0,1]\) and set
+\(\texttt{ocr\_low\_confidence}\) if below threshold. Retrieval may:
+(i) apply a small score penalty in non-E2E paths,
+(ii) abstain when all selected citations come from low-OCR sources.
+Receipts carry these flags; metrics track rates.
+
+% ------------------------------------------------------------
+\section{Embedding Models and Prompt Formats}
+\label{sec:embed}
+Default encoder: \texttt{BAAI/bge-small-en-v1.5} (384d, CPU-friendly).
+Record \texttt{embed\_model}, dimension, revision, weights/tokenizer SHA-256, and prompt format.
+\begin{center}
+\begin{tabular}{lcc}
+\toprule
+Model & Dim & Prompt Format (doc / query) \\
+\midrule
+BGE-small v1.5 & 384 & \texttt{passage:\{text\}} / \texttt{query:\{text\}} \\
+GTE-base v1.5 & 768 & \texttt{document:\{text\}} / \texttt{query:\{text\}} \\
+E5-small v2 & 384 & \texttt{passage:\{text\}} / \texttt{query:\{text\}} \\
+BGE-m3 (multi) & 1024 & \texttt{passage:\{text\}} / \texttt{query:\{text\}} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+% ------------------------------------------------------------
+\section{Complexity and Latency}
+\label{sec:complexity}
+Let \(n\) be subgraph nodes and \(d\) embedding dim. One CG iteration costs
+\(\mathcal{O}(\text{nnz}(L) + n)\); total \(\mathcal{O}(T(\text{nnz}+n))\) with \(T\) iterations,
+typically \(T\in[5,20]\) for tol \(10^{-3}\) with Jacobi and warm starts.
+Composite runs at lattice count \(m\ll n\).
+Deterministic sorts and hashing add linear overhead.
+
+% ------------------------------------------------------------
+\section{Security, Privacy, Deployment}
+\label{sec:security}
+Local-only by default (\(127.0.0.1\)); no egress.
+Model downloads are optional and verified by hash; strict mode fails on mismatch.
+Metrics endpoint can be protected by a secret header.
+Receipts exclude raw PII/PHI; OCR and PHI/PII detectors can tag/mask/block before indexing.
+
+% ------------------------------------------------------------
+\section{Evaluation and Acceptance}
+\label{sec:evaluation}
+\paragraph{Quality.} nDCG@K / MRR uplift vs cosine; accept@K on partner queries; abstain correctness.
+\paragraph{Performance.} p50/p95 end-to-end (route+compose+rank).
+\paragraph{Determinism.} Repeat runs produce identical receipts/hashes.
+\paragraph{Auditability.} Composite receipt verifies against DB Merkle-root.
+\paragraph{OCR Governance.} Low-confidence OCR penalty/abstain triggers correctly with thresholds.
+
+\subsection*{Acceptance Checklist}
+\begin{itemize}[leftmargin=1.3em]
+  \item Micro-lattice: SPD solve succeeds; \(E_{\text{after}}\le E_{\text{before}}\); \(\Delta H_{\text{total}}\ge 0\).
+  \item Per-node attribution sums to \(\Delta H_{\text{total}}\) (within \(10^{-4}\)).
+  \item Composite: SPD solve; \(\Delta H_\mathcal{L}\ge 0\); ranked lattices improve retrieval.
+  \item Receipts: deterministic edge hashes, solver stats, \texttt{state\_sig}; Merkle root computed and verifiable.
+  \item Gating: \(\varepsilon,\tau\) enforce abstain on weak context; OCR governance honored when enabled.
+\end{itemize}
+
+% ------------------------------------------------------------
+\section{Limitations and Extensions}
+\label{sec:limits}
+Highly heterogeneous graphs may degrade conditioning; mitigate with degree caps and \(\lambda_G\) floors.
+OCR confidence may be noisy on damaged scans; manual remediation or better OCR backends may be required.
+Future work: path priors for ordered text; diffusion gates; online bounded updates to adjacency; ONNX/INT8
+embeddings; robust multilingual routing (BGE-m3).
+
+% ------------------------------------------------------------
+\section{Conclusion}
+\label{sec:conclusion}
+Oscillink LatticeDB provides a principled, local-first approach to coherent retrieval:
+strictly convex energies with SPD guarantees, explainable per-node attribution, and receipts that verify.
+The lattice-of-lattices design scales across subdomains while staying deterministic and auditable.
+
+% ------------------------------------------------------------
+\appendix
+\section*{Appendix A: Default Hyperparameters}
+\begin{center}
+\begin{tabular}{lcc}
+\toprule
+Parameter & Symbol & Default \\
+\midrule
+Neighborhood (micro) & $k$ & $6$ \\
+Pinning support (micro) & $K$ & $32$ \\
+Softmax temperature (micro) & $\tau$ & $0.1$ \\
+Weights (micro) & $(\lambda_G,\lambda_C,\lambda_Q)$ & $(1.0,\,0.5,\,4.0)$ \\
+Composite neighborhood & $k_{\mathcal{L}}$ & $4$ \\
+Composite pinning support & $K_{\mathcal{L}}$ & $8$ \\
+Composite temperature & $\tau_{\mathcal{L}}$ & $0.1$ \\
+Composite weights & $(\lambda_G^\mathcal{L},\lambda_C^\mathcal{L},\lambda_Q^\mathcal{L})$ & $(0.5,\,0.25,\,2.0)$ \\
+CG tolerance & $\text{tol}$ & $10^{-3}$ \\
+CG max iterations & $T_{\max}$ & $\min(64,\,2n)$ \\
+Score blend & $\alpha$ & $0.5$ \\
+Abstain thresholds & $(\varepsilon,\tau)$ & $(10^{-6},\,0.15)$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section*{Appendix B: Example Receipt Fields}
+\begin{lstlisting}
+{
+  "lattice_id": "contracts-001",
+  "edge_hash": "sha256:...",
+  "deltaH_total": 0.273,
+  "cg_iters": 7,
+  "final_residual": 0.00091,
+  "embed_model": "BAAI/bge-small-en-v1.5",
+  "embed_dim": 384,
+  "weights_sha256": "...",
+  "prompt_format": {"doc":"passage: {text}", "query":"query: {text}"},
+  "state_sig": "sha256:..."
+}
+\end{lstlisting}
+
+\section*{Appendix C: Abstain Reasons (API)}
+\begin{itemize}[leftmargin=1.3em]
+  \item \texttt{insufficient\_coherence}: $\Delta H_{\text{total}}<\varepsilon$ or top score $<\tau$.
+  \item \texttt{low\_quality\_ocr}: all selected citations flagged low OCR confidence.
+  \item \texttt{dimension\_mismatch}: model dim $\neq$ index dim (guard).
+\end{itemize}
+
+\end{document}

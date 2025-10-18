@@ -1,0 +1,251 @@
+> import hashlib
+  
+> import numpy as np
+> from typing import Tuple, Dict, Any, List, Callable
+  
+> def _deterministic_embed(text: str, dim: int = 32) -> np.ndarray:
+      # Deterministic stub embedding: SHA256 -> seeded PRNG vector (unit norm).
+>     h = hashlib.sha256(text.encode("utf-8")).digest()
+>     seed = int.from_bytes(h[:8], "big") & 0x7fffffffffffffff
+>     rng = np.random.default_rng(seed)
+>     v = rng.standard_normal(dim).astype(np.float32)
+>     v /= np.linalg.norm(v) + 1e-9
+>     return v
+  
+> def build_local_lattice(chunks: List[Dict[str,Any]], dim: int = 32) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+      # Build tiny mutual-kNN graph and compute U* via a simple smoothing (stub for SPD solve).
+!     n = len(chunks)
+!     X = np.stack([_deterministic_embed(c['text'], dim) for c in chunks], axis=0)  # (n,d)
+  
+!     sims = X @ X.T
+!     np.fill_diagonal(sims, -1.0)
+!     k = min(4, max(1, n-1))
+!     nbrs = np.argsort(-sims, axis=1)[:, :k]
+!     edges = set()
+!     for i in range(n):
+!         for j in nbrs[i]:
+!             if i == j:
+!                 continue
+!             if i in nbrs[j]:
+!                 a, b = (i, j) if i < j else (j, i)
+!                 edges.add((a,b))
+!     edges_idx = np.array(sorted(list(edges)), dtype=np.int32) if edges else np.zeros((0,2), dtype=np.int32)
+  
+!     centroid = X.mean(axis=0, keepdims=True)
+!     lam = 0.2
+!     Ustar = (1-lam)*X + lam*centroid
+!     return X, edges_idx, Ustar
+  
+> def edge_hash(edges_idx: np.ndarray) -> str:
+>     import hashlib
+>     if edges_idx.size == 0:
+>         return hashlib.sha256(b'').hexdigest()
+>     return hashlib.sha256(edges_idx.tobytes()).hexdigest()
+  
+> def deltaH_stub(X: np.ndarray, Ustar: np.ndarray, edges_idx: np.ndarray) -> float:
+!     def energy(U):
+!         if edges_idx.size == 0:
+!             return 0.0
+!         dif = U[edges_idx[:,0]] - U[edges_idx[:,1]]
+!         return float((dif**2).sum())
+!     return max(0.0, energy(X) - energy(Ustar))
+  
+  
+  # ------------------------
+  # SPD-based formulation
+  # ------------------------
+  
+> def _build_mutual_knn(X: np.ndarray, k: int) -> np.ndarray:
+>     n = X.shape[0]
+>     if n <= 1:
+>         return np.zeros((0, 2), dtype=np.int32)
+>     sims = X @ X.T
+>     np.fill_diagonal(sims, -1.0)
+>     k_eff = min(k, max(1, n - 1))
+>     nbrs = np.argsort(-sims, axis=1)[:, :k_eff]
+>     edges = set()
+>     for i in range(n):
+>         for j in nbrs[i]:
+>             if i == j:
+!                 continue
+>             if i in nbrs[j]:
+>                 a, b = (i, j) if i < j else (j, i)
+>                 edges.add((a, b))
+>     if not edges:
+!         return np.zeros((0, 2), dtype=np.int32)
+>     return np.array(sorted(list(edges)), dtype=np.int32)
+  
+  
+> def _laplacian_matvec_and_diag(y: np.ndarray, edges: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+>     """Compute L@y and diag(L) for an undirected graph given by edge list.
+  
+>     y: (n, d)
+>     edges: (m, 2)
+>     returns: (L@y, diag) where diag is (n,)
+>     """
+>     n = y.shape[0]
+>     if edges.size == 0 or n == 0:
+>         return np.zeros_like(y), np.zeros((n,), dtype=y.dtype)
+>     i = edges[:, 0]
+>     j = edges[:, 1]
+>     deg = np.zeros((n,), dtype=np.int32)
+>     np.add.at(deg, i, 1)
+>     np.add.at(deg, j, 1)
+>     Ly = np.zeros_like(y)
+      # For each edge (i,j), contribute (u_i - u_j) to i and (u_j - u_i) to j
+>     dif = y[i] - y[j]
+>     np.add.at(Ly, i, dif)
+>     np.add.at(Ly, j, -dif)
+>     return Ly, deg.astype(y.dtype)
+  
+  
+> def _jacobi_cg(
+>     matvec: Callable[[np.ndarray], np.ndarray],
+>     diag: np.ndarray,
+>     b: np.ndarray,
+>     x0: np.ndarray,
+>     tol: float = 1e-5,
+>     max_iter: int = 512,
+> ) -> Tuple[np.ndarray, int, float]:
+>     """Conjugate Gradient with Jacobi preconditioner for SPD systems.
+  
+>     Solves M x = b, given matvec(x) = Mx and diag(M).
+>     Returns (x, iters, final_residual_norm).
+>     """
+>     x = x0.copy()
+>     r = b - matvec(x)
+      # Preconditioner z = M^{-1}_diag r
+>     Minv = 1.0 / (diag + 1e-12)
+>     z = Minv * r
+>     p = z.copy()
+>     rz_old = float((r * z).sum())
+>     res_norm = float(np.linalg.norm(r))
+>     if res_norm <= tol:
+>         return x, 0, res_norm
+>     k = 0
+>     while k < max_iter and res_norm > tol:
+>         Ap = matvec(p)
+>         alpha = rz_old / float((p * Ap).sum() + 1e-12)
+>         x += alpha * p
+>         r -= alpha * Ap
+>         res_norm = float(np.linalg.norm(r))
+>         if res_norm <= tol:
+>             k += 1
+>             break
+>         z = Minv * r
+>         rz_new = float((r * z).sum())
+>         beta = rz_new / (rz_old + 1e-12)
+>         p = z + beta * p
+>         rz_old = rz_new
+>         k += 1
+>     return x, k, res_norm
+  
+  
+> def _energy(
+>     U: np.ndarray,
+>     X: np.ndarray,
+>     edges: np.ndarray,
+>     lamG: float,
+>     lamC: float,
+>     lamQ: float,
+>     b: np.ndarray,
+>     q: np.ndarray,
+> ) -> float:
+>     term_G = 0.5 * lamG * float(((U - X) ** 2).sum())
+>     if edges.size == 0:
+>         term_C = 0.0
+>     else:
+>         dif = U[edges[:, 0]] - U[edges[:, 1]]
+>         term_C = 0.5 * lamC * float((dif ** 2).sum())
+      # Pinning term
+>     dq = U - q[None, :]
+>     term_Q = 0.5 * lamQ * float(((dq ** 2) * b[:, None]).sum())
+>     return term_G + term_C + term_Q
+  
+  
+> def build_lattice_spd(
+>     chunks: List[Dict[str, Any]],
+>     dim: int = 32,
+>     k: int = 4,
+>     lambda_G: float = 1.0,
+>     lambda_C: float = 0.5,
+>     lambda_Q: float = 4.0,
+>     tol: float = 1e-5,
+>     max_iter: int = 256,
+>     precomputed_X: np.ndarray | None = None,
+> ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, Dict[str, Any]]:
+>     """Build mutual-kNN graph and solve SPD system for U* with energy accounting.
+  
+>     Returns (X, edges_idx, Ustar, stats) where stats includes deltaH_total, edge_hash,
+>     cg_iters, final_residual.
+>     """
+>     n = len(chunks)
+>     if n == 0:
+!         X = np.zeros((0, dim), dtype=np.float32)
+!         E = np.zeros((0, 2), dtype=np.int32)
+!         return X, E, X.copy(), {
+!             "deltaH_total": 0.0,
+!             "cg_iters": 0,
+!             "final_residual": 0.0,
+!             "edge_hash": edge_hash(E),
+!         }
+>     if precomputed_X is not None:
+>         X = np.asarray(precomputed_X, dtype=np.float32)
+>         if X.shape[0] != n:
+!             raise ValueError("precomputed_X row count must match chunks length")
+>         if X.shape[1] != dim:
+!             raise ValueError("precomputed_X dim must match 'dim'")
+>     else:
+>         X = np.stack([_deterministic_embed(c["text"], dim) for c in chunks], axis=0).astype(np.float32)
+      # Ensure unit-normal rows
+>     X /= (np.linalg.norm(X, axis=1, keepdims=True) + 1e-9)
+>     E = _build_mutual_knn(X, k=k)
+  
+      # Pinning to global centroid, choose anchors by top cosine similarity to centroid
+>     q = X.mean(axis=0)
+>     q /= (np.linalg.norm(q) + 1e-9)
+>     sims = X @ q
+>     anchors = int(max(1, round(0.1 * n)))
+>     order = np.argsort(-sims)
+>     b = np.zeros((n,), dtype=np.float32)
+>     b[order[:anchors]] = 1.0
+  
+      # Build matvec and diagonal for M = λG I + λC L + λQ B
+>     def matvec_all(U: np.ndarray) -> np.ndarray:
+>         LU, deg = _laplacian_matvec_and_diag(U, E)
+          # Note: deg depends only on topology; compute once externally
+>         return lambda_G * U + lambda_C * LU + lambda_Q * (b[:, None] * U)
+  
+      # Precompute diag(M)
+>     _, deg = _laplacian_matvec_and_diag(np.zeros_like(X), E)
+>     diagM = lambda_G + lambda_C * deg + lambda_Q * b
+  
+      # Solve per-dimension with CG
+>     U = np.zeros_like(X)
+>     max_k = 0
+>     last_res = 0.0
+>     for j in range(X.shape[1]):
+>         rhs = lambda_G * X[:, j] + lambda_Q * (b * q[j])
+          # Warm start at X[:,j]
+>         x0 = X[:, j]
+          # Define 1-D matvec using captured diag/edges via matvec_all
+>         def mv_1d(xv: np.ndarray) -> np.ndarray:
+>             return matvec_all(xv[:, None])[:, 0]
+  
+>         sol, iters, res = _jacobi_cg(mv_1d, diagM, rhs, x0, tol=tol, max_iter=max_iter)
+>         U[:, j] = sol
+>         max_k = max(max_k, iters)
+>         last_res = max(last_res, res)
+  
+      # Energy accounting
+>     dH = _energy(X, X, E, lambda_G, lambda_C, lambda_Q, b, q) - _energy(
+>         U, X, E, lambda_G, lambda_C, lambda_Q, b, q
+>     )
+>     dH = float(max(0.0, dH))
+>     stats = {
+>         "deltaH_total": dH,
+>         "cg_iters": int(max_k),
+>         "final_residual": float(last_res),
+>         "edge_hash": edge_hash(E),
+>     }
+>     return X, E, U.astype(np.float32), stats

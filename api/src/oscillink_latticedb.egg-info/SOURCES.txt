@@ -19,11 +19,15 @@ src/oscillink_latticedb.egg-info/dependency_links.txt
 src/oscillink_latticedb.egg-info/requires.txt
 src/oscillink_latticedb.egg-info/top_level.txt
 tests/test_api.py
+tests/test_embeddings.py
 tests/test_end_to_end.py
+tests/test_index_faiss.py
 tests/test_ingest.py
 tests/test_jwks_auth.py
 tests/test_jwt_auth.py
+tests/test_main_edges.py
 tests/test_manifest_and_readiness.py
+tests/test_manifest_and_utils.py
 tests/test_manifest_created_source_filters.py
 tests/test_manifest_endpoint.py
 tests/test_manifest_filters.py
@@ -34,6 +38,9 @@ tests/test_rate_limit_redis.py
 tests/test_readyz_consistency.py
 tests/test_receipts.py
 tests/test_route_compose.py
+tests/test_router.py
 tests/test_search_endpoint.py
+tests/test_shards.py
 tests/test_spd_invariants.py
 tests/test_verify.py
+tests/test_watcher.py
