@@ -12,6 +12,7 @@ from .core.middleware import install_http_middlewares
 from .routers import ops as ops_router
 from .routers import manifest as manifest_router
 from .routers import latticedb as latticedb_router
+from .auth.jwt import _JWKS_CLIENT_CACHE as _JWKS_CLIENT_CACHE  # compat: tests import from app.main
 from latticedb.embeddings import _load_registry
 
 
