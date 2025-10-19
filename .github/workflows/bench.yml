@@ -3,14 +3,14 @@ name: Bench Suite
 on:
   workflow_dispatch:
   push:
-    branches: [ main, master ]
+    branches: [ main, master, develop ]
   pull_request:
-    branches: [ main, master ]
+    branches: [ main, master, develop ]
 
 jobs:
   bench:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -49,6 +49,10 @@ jobs:
           python api/scripts/bench_query.py --url http://127.0.0.1:8080 --db-path latticedb --runs 10 --warmup 2 --q 'What short sanity check?' --k-lattices 8 --select 6 --out _bench/bench_query.json --csv _bench/bench_query.csv || true
           python api/scripts/bench_scale.py --url http://127.0.0.1:8080 --db-path latticedb --q 'What is Oscillink?' --select 6 --runs 10 --k-grid 4,8 --out _bench/bench_scale.json || true
           python api/scripts/bench_concurrency.py --url http://127.0.0.1:8080 --runs 50 --concurrency 10 --q 'What is Oscillink?' || true
+          # Determinism check should gate (fail on mismatch)
+          python api/scripts/check_determinism.py --url http://127.0.0.1:8080 --db-path latticedb --q 'What is Oscillink?' --k-lattices 8 --select 6 --runs 5
+          # OCR quality stub (non-gating)
+          python api/scripts/bench_ocr_quality.py --labels-csv bench/assets/ocr_labels.csv --out _bench/bench_ocr_quality.json || true
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

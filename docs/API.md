@@ -45,10 +45,20 @@ Manifest fields (current): group_id, lattice_id, edge_hash, deltaH_total, create
 
 `GET /v1/latticedb/manifest`
 
-Params: db_path, limit, offset, group_id, lattice_id, edge_hash, source_file, min_deltaH, max_deltaH, created_from, created_to, sort_by (group_id|lattice_id|deltaH_total), sort_order (asc|desc)
+Params: db_path, limit, offset, group_id, lattice_id, edge_hash, source_file, min_deltaH, max_deltaH, created_from, created_to, display_name, sort_by (group_id|lattice_id|deltaH_total|display_name), sort_order (asc|desc)
 
 ### Manifest search
 
 `GET /v1/latticedb/search`
 
-Params: db_path, q, limit, offset — substring match across group_id, lattice_id, source_file, edge_hash.
+Params: db_path, q, limit, offset — substring match across group_id, lattice_id, source_file, edge_hash, display_name.
+
+### Lattice metadata
+
+`PUT /v1/latticedb/lattice/{lattice_id}/metadata`
+
+Body: { db_path (optional), display_name }
+
+Notes:
+- display_name is user-defined and stored under `db_root/metadata/names.json`.
+- This metadata does not affect receipts or the DB Merkle root.

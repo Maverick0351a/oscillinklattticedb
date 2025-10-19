@@ -8,6 +8,20 @@ const g: any = globalThis as any
 
 beforeEach(() => {
   g.fetch = vi.fn(async (url: string, init?: RequestInit) => {
+    // Default stubs for admin endpoints to avoid interfering messages
+    if (String(url).includes('/v1/db/scan')) {
+      return new Response(JSON.stringify({ scanned: true }), { status: 200 })
+    }
+    if (String(url).includes('/readyz')) {
+      return new Response(JSON.stringify({ ok: true }), { status: 200 })
+    }
+    if (String(url).includes('/v1/latticedb/manifest')) {
+      return new Response(JSON.stringify({ total: 0, items: [] }), { status: 200 })
+    }
+    if (String(url).includes('/v1/db/receipt') && !String(url).endsWith('/v1/db/receipt')) {
+      // Query form from admin panel handled above; leave main receipt to specific tests
+      return new Response(JSON.stringify({}), { status: 200 })
+    }
     if (String(url).includes('/v1/license/status')) {
       return new Response(JSON.stringify({ mode: 'dev', notice: 'for testing' }), { status: 200 })
     }
@@ -50,7 +64,8 @@ describe('App', () => {
 
     // Run pipeline
       const runBtns = screen.getAllByRole('button', { name: /Run/i })
-      fireEvent.click(runBtns[0])
+        const runBtn = screen.getByRole('button', { name: /^Run$/ })
+        fireEvent.click(runBtn)
 
     // Candidates show up
     await screen.findByText(/Candidate lattices/i)
@@ -69,6 +84,9 @@ describe('App', () => {
   it('handles missing composite receipt on verify', async () => {
     // Override compose response to have no composite
     ;(g.fetch as any) = vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).includes('/v1/db/scan')) return new Response(JSON.stringify({ scanned: true }), { status: 200 })
+      if (String(url).includes('/readyz')) return new Response(JSON.stringify({ ok: true }), { status: 200 })
+      if (String(url).includes('/v1/latticedb/manifest')) return new Response(JSON.stringify({ total: 0, items: [] }), { status: 200 })
       if (String(url).includes('/v1/license/status')) {
         return new Response(JSON.stringify({ mode: 'dev', notice: 'for testing' }), { status: 200 })
       }
@@ -86,8 +104,8 @@ describe('App', () => {
 
     render(<App />)
 
-      const runBtns = screen.getAllByRole('button', { name: /Run/i })
-      fireEvent.click(runBtns[0])
+        const runBtn = screen.getByRole('button', { name: /^Run$/ })
+        fireEvent.click(runBtn)
 
     await screen.findByText(/Context Pack/i)
 
@@ -99,6 +117,9 @@ describe('App', () => {
 
   it('shows error message if DB receipt fetch fails', async () => {
     ;(g.fetch as any) = vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).includes('/v1/db/scan')) return new Response(JSON.stringify({ scanned: true }), { status: 200 })
+      if (String(url).includes('/readyz')) return new Response(JSON.stringify({ ok: true }), { status: 200 })
+      if (String(url).includes('/v1/latticedb/manifest')) return new Response(JSON.stringify({ total: 0, items: [] }), { status: 200 })
       if (String(url).includes('/v1/license/status')) {
         return new Response(JSON.stringify({ mode: 'dev', notice: 'for testing' }), { status: 200 })
       }
@@ -127,7 +148,8 @@ describe('App', () => {
     render(<App />)
 
     const runBtns = screen.getAllByRole('button', { name: /Run/i })
-    fireEvent.click(runBtns[0])
+      const runBtn = screen.getByRole('button', { name: /^Run$/ })
+      fireEvent.click(runBtn)
 
     await screen.findByText(/Context Pack/i)
 

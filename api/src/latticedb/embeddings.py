@@ -201,11 +201,53 @@ class EmbeddingBackend:
 
 
 def load_model(preset_id: str, device: str = "cpu", batch_size: int = 32, strict_hash: bool = False) -> EmbeddingBackend:
+    """Load an embedding backend.
+
+    Behavior:
+    - If preset_id matches a known registry key, use that preset (stable, curated defaults).
+    - Else, if preset_id looks like a HuggingFace model id (contains '/' or starts with 'hf:'),
+      construct a dynamic preset that points directly to that HF repo. We will detect the
+      embedding dimension at load time from model.config.hidden_size. A default prompt format
+      of pass-through is used.
+    - Otherwise, raise ValueError.
+    """
     reg = _load_registry()
-    if preset_id not in reg:
-        raise ValueError(f"Unknown embed preset: {preset_id}")
-    preset = reg[preset_id]
-    return EmbeddingBackend(preset, device=device, batch_size=batch_size, strict_hash=strict_hash)
+    if preset_id in reg:
+        preset = reg[preset_id]
+        return EmbeddingBackend(preset, device=device, batch_size=batch_size, strict_hash=strict_hash)
+
+    # Bring-your-own HF model convenience: allow 'hf:org/name' or plain 'org/name'
+    hf_id = None
+    if isinstance(preset_id, str):
+        if preset_id.startswith("hf:"):
+            hf_id = preset_id.split(":", 1)[1]
+        elif "/" in preset_id:
+            hf_id = preset_id
+
+    if hf_id:
+        dynamic = EmbedPreset(
+            id=preset_id,
+            hf=hf_id,
+            dim=768,  # temporary; reset to actual hidden size after load if available
+            license="custom",
+            prompt_format={"doc": "{text}", "query": "{text}"},
+            rev=None,
+            sha256=None,
+            tokenizer_sha256=None,
+        )
+        # EmbeddingBackend._prepare will attempt to load the model/tokenizer and set hashes;
+        # we can also patch the dimension to the model's hidden size when available.
+        backend = EmbeddingBackend(dynamic, device=device, batch_size=batch_size, strict_hash=strict_hash)
+        # Best-effort: if transformers is available and model exposes hidden size, update preset dim
+        try:
+            mdl = getattr(backend, "_model", None)
+            if mdl is not None and hasattr(mdl, "config") and hasattr(mdl.config, "hidden_size"):
+                dynamic.dim = int(getattr(mdl.config, "hidden_size"))
+        except Exception:
+            pass
+        return backend
+
+    raise ValueError(f"Unknown embed preset: {preset_id}")
 
 
 def preset_meta(backend: EmbeddingBackend) -> Dict[str, Any]:

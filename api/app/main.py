@@ -29,7 +29,7 @@ from latticedb.watcher import single_scan as watcher_single_scan
 from latticedb.verify import verify_composite
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
-from latticedb.utils import Manifest
+from latticedb.utils import Manifest, atomic_write_text
 from fastapi.responses import JSONResponse
 from latticedb.embeddings import _load_registry
 
@@ -96,6 +96,15 @@ class Settings(BaseSettings):
     license_tier: str | None = os.environ.get("LATTICEDB_LICENSE_TIER")
     license_expiry: str | None = os.environ.get("LATTICEDB_LICENSE_EXPIRY")  # ISO8601
     saas_allowed: bool = bool(int(os.environ.get("LATTICEDB_SAAS_ALLOWED", "0")))
+    # Optional LLM integration (local-only recommended, disabled by default)
+    llm_enabled: bool = bool(int(os.environ.get("LATTICEDB_LLM_ENABLED", "0")))
+    llm_backend: str = os.environ.get("LATTICEDB_LLM_BACKEND", "ollama")  # ollama|llama.cpp|custom
+    llm_endpoint: str = os.environ.get("LATTICEDB_LLM_ENDPOINT", "http://127.0.0.1:11434")
+    llm_model: str = os.environ.get("LATTICEDB_LLM_MODEL", "mistral")
+    llm_temperature: float = float(os.environ.get("LATTICEDB_LLM_TEMPERATURE", "0.0"))
+    llm_top_p: float = float(os.environ.get("LATTICEDB_LLM_TOP_P", "1.0"))
+    llm_max_tokens: int = int(os.environ.get("LATTICEDB_LLM_MAX_TOKENS", "512"))
+    llm_seed: int = int(os.environ.get("LATTICEDB_LLM_SEED", "0"))
 
 
 settings = Settings()
@@ -806,6 +815,174 @@ def api_verify(req: VerifyReq):
     res = verify_composite(root/"receipts/db_receipt.json", req.composite, req.lattice_receipts)
     return res
 
+
+class ChatReq(BaseModel):
+    db_path: str | None = None
+    q: str
+    k_lattices: int = 8
+    select: int = 6
+    # LLM overrides (optional)
+    model: str | None = None
+    temperature: float | None = None
+    top_p: float | None = None
+    max_tokens: int | None = None
+    seed: int | None = None
+
+# -----------------------------
+# Lattice metadata (display_name)
+# -----------------------------
+
+def _names_path(root: Path) -> Path:
+    return root / "metadata" / "names.json"
+
+def _load_names(root: Path) -> dict[str, str]:
+    p = _names_path(root)
+    if not p.exists():
+        return {}
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+def _save_names(root: Path, names: dict[str, str]) -> None:
+    (root / "metadata").mkdir(parents=True, exist_ok=True)
+    atomic_write_text(_names_path(root), json.dumps(names, ensure_ascii=False, indent=2))
+
+class LatticeMetadataReq(BaseModel):
+    db_path: str | None = None
+    display_name: str
+
+@app.put("/v1/latticedb/lattice/{lattice_id}/metadata", tags=["latticedb"], summary="Set lattice metadata (display_name)")
+def set_lattice_metadata(lattice_id: str, req: LatticeMetadataReq, _auth=auth_guard()):
+    root = Path(req.db_path) if req.db_path else Path(settings.db_root)
+    # Validate lattice exists
+    rows = Manifest(root).list_lattices()
+    if not any(str(r.get("lattice_id")) == lattice_id for r in rows):
+        raise HTTPException(status_code=404, detail="lattice_id not found")
+    name = req.display_name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="display_name cannot be empty")
+    if len(name) > 256:
+        raise HTTPException(status_code=400, detail="display_name too long (max 256)")
+    names = _load_names(root)
+    names[lattice_id] = name
+    _save_names(root, names)
+    return {"ok": True, "lattice_id": lattice_id, "display_name": name}
+
+
+def _build_prompt(question: str, citations: list[dict]) -> tuple[str, str]:
+    """Create an instruction-style prompt from context; returns (prompt, sha256)."""
+    parts = [
+        "You are a careful assistant. Answer only from the provided context.",
+        "If the answer is not in the context, say you don't have enough information.",
+        "Context:",
+    ]
+    for i, c in enumerate(citations, start=1):
+        snippet = str(c.get("text", ""))
+        lid = c.get("lattice")
+        parts.append(f"[{i}] (lattice:{lid}) {snippet}")
+    parts.append("")
+    parts.append(f"Question: {question}")
+    parts.append("Answer:")
+    prompt = "\n".join(parts)
+    ph = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+    return prompt, ph
+
+
+def _ollama_generate(endpoint: str, model: str, prompt: str, *, temperature: float, top_p: float, max_tokens: int, seed: int, timeout: float = 60.0):
+    """Call Ollama /api/generate via stdlib HTTP; return dict with text and token counts."""
+    import json as _json
+    from urllib import request as _req
+    from urllib.error import URLError as _URLError, HTTPError as _HTTPError
+
+    url = endpoint.rstrip("/") + "/api/generate"
+    payload = {
+        "model": model,
+        "prompt": prompt,
+        "stream": False,
+        "options": {
+            "temperature": max(0.0, float(temperature)),
+            "top_p": max(0.0, float(top_p)),
+            "num_predict": int(max(1, int(max_tokens))),
+            "seed": int(seed),
+        },
+    }
+    data = _json.dumps(payload).encode("utf-8")
+    req = _req.Request(url, data=data, headers={"Content-Type": "application/json"}, method="POST")
+    try:
+        with _req.urlopen(req, timeout=timeout) as resp:
+            body = resp.read().decode("utf-8", errors="ignore")
+            obj = _json.loads(body)
+            # Common fields: response, eval_count, prompt_eval_count
+            return {
+                "ok": True,
+                "answer": obj.get("response", ""),
+                "tokens": {
+                    "prompt": obj.get("prompt_eval_count"),
+                    "completion": obj.get("eval_count"),
+                },
+                "raw": obj,
+            }
+    except (_HTTPError, _URLError) as e:
+        return {"ok": False, "error": f"ollama_error: {type(e).__name__}: {e}"}
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": f"ollama_exception: {type(e).__name__}: {e}"}
+
+
+@app.post("/v1/latticedb/chat", tags=["latticedb"], summary="Compose context and generate answer via local LLM (optional)")
+def api_chat(req: ChatReq):
+    if not settings.llm_enabled:
+        raise HTTPException(status_code=400, detail="llm disabled; set LATTICEDB_LLM_ENABLED=1 to enable")
+
+    # Step 1: route and compose (reuse existing logic)
+    r = api_route(RouteReq(db_path=req.db_path, q=req.q, k_lattices=req.k_lattices))
+    cands = r.get("candidates", [])
+    sel_ids: list[str] = [
+        str(c["lattice_id"]) for c in cands[: max(0, int(req.select))]
+        if isinstance(c.get("lattice_id"), str)
+    ]
+    comp = api_compose(ComposeReq(db_path=req.db_path, q=req.q, lattice_ids=sel_ids))
+    pack = comp.get("context_pack", {})
+    citations = pack.get("working_set", [])
+    receipts = pack.get("receipts", {})
+
+    # Step 2: build prompt and call LLM
+    prompt, prompt_sha256 = _build_prompt(req.q, citations)
+    model = req.model or settings.llm_model
+    temperature = settings.llm_temperature if req.temperature is None else req.temperature
+    top_p = settings.llm_top_p if req.top_p is None else req.top_p
+    max_tokens = settings.llm_max_tokens if req.max_tokens is None else req.max_tokens
+    seed = settings.llm_seed if req.seed is None else req.seed
+
+    if settings.llm_backend == "ollama":
+        result = _ollama_generate(settings.llm_endpoint, model, prompt, temperature=temperature, top_p=top_p, max_tokens=max_tokens, seed=int(seed))
+    else:
+        raise HTTPException(status_code=400, detail=f"llm backend not supported in scaffold: {settings.llm_backend}")
+
+    if not result.get("ok"):
+        raise HTTPException(status_code=502, detail=str(result.get("error")))
+
+    llm_prov = {
+        "backend": settings.llm_backend,
+        "endpoint": settings.llm_endpoint,
+        "model": model,
+        "temperature": float(temperature),
+        "top_p": float(top_p),
+        "max_tokens": int(max_tokens),
+        "seed": int(seed),
+        "prompt_sha256": prompt_sha256,
+        "token_counts": result.get("tokens"),
+    }
+
+    return {
+        "chat": {
+            "question": req.q,
+            "answer": result.get("answer", ""),
+            "context_pack": {"question": pack.get("question", req.q), "working_set": citations, "receipts": receipts},
+            "llm": llm_prov,
+        }
+    }
+
 # --- Test-only endpoints ---
 if settings.enable_test_endpoints:
     @app.get("/__test/slow", tags=["ops"], summary="Test-only slow endpoint")
@@ -839,12 +1016,24 @@ def api_manifest(
     source_file: str | None = None,
     created_from: str | None = None,  # ISO8601
     created_to: str | None = None,    # ISO8601
-    sort_by: str | None = None,  # one of: group_id, lattice_id, deltaH_total
+    display_name: str | None = None,
+    sort_by: str | None = None,  # one of: group_id, lattice_id, deltaH_total, display_name
     sort_order: str = "asc",  # asc|desc
 ):
     """List lattices from the manifest with basic filtering and sorting (Phase 2 prep)."""
-    man = Manifest(Path(db_path) if db_path else Path(settings.db_root))
+    root = Path(db_path) if db_path else Path(settings.db_root)
+    man = Manifest(root)
     rows = man.list_lattices()
+
+    # Enrich with display_name metadata
+    try:
+        names = _load_names(root)
+        for r in rows:
+            lid = str(r.get("lattice_id", ""))
+            if lid in names:
+                r["display_name"] = names[lid]
+    except Exception:
+        pass
 
     # Filtering
     if group_id:
@@ -855,6 +1044,8 @@ def api_manifest(
         rows = [r for r in rows if r.get("edge_hash") == edge_hash]
     if source_file:
         rows = [r for r in rows if str(r.get("source_file","")) == source_file]
+    if display_name:
+        rows = [r for r in rows if str(r.get("display_name","")) == display_name]
     if min_deltaH is not None:
         rows = [r for r in rows if float(r.get("deltaH_total", 0.0)) >= float(min_deltaH)]
     if max_deltaH is not None:
@@ -886,7 +1077,7 @@ def api_manifest(
         rows = [r for r in rows if _in_window(r)]
 
     # Sorting
-    if sort_by in {"group_id", "lattice_id", "deltaH_total"}:
+    if sort_by in {"group_id", "lattice_id", "deltaH_total", "display_name"}:
         rev = sort_order.lower() == "desc"
         if sort_by == "deltaH_total":
             rows = sorted(rows, key=lambda r: float(r.get("deltaH_total", 0.0)), reverse=rev)
@@ -902,9 +1093,19 @@ def api_manifest(
 
 @app.get("/v1/latticedb/search", tags=["manifest"], summary="Search manifest by substring")
 def api_search(db_path: str | None = None, q: str = "", limit: int = 100, offset: int = 0):
-    """Simple substring search across manifest fields (group_id, lattice_id, source_file, edge_hash)."""
-    man = Manifest(Path(db_path) if db_path else Path(settings.db_root))
+    """Simple substring search across manifest fields (group_id, lattice_id, source_file, edge_hash, display_name)."""
+    root = Path(db_path) if db_path else Path(settings.db_root)
+    man = Manifest(root)
     rows = man.list_lattices()
+    # Enrich with display_name
+    try:
+        names = _load_names(root)
+        for r in rows:
+            lid = str(r.get("lattice_id", ""))
+            if lid in names:
+                r["display_name"] = names[lid]
+    except Exception:
+        pass
     qn = q.strip().lower()
     if qn:
         def _match(r: dict) -> bool:
@@ -912,6 +1113,9 @@ def api_search(db_path: str | None = None, q: str = "", limit: int = 100, offset
                 v = str(r.get(k, "")).lower()
                 if qn in v:
                     return True
+            dv = str(r.get("display_name", "")).lower()
+            if qn in dv:
+                return True
             return False
         rows = [r for r in rows if _match(r)]
     total = len(rows)
