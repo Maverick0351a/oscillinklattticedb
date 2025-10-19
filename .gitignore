@@ -1,3 +1,12 @@
+## Generated DB and bench artifacts
+latticedb/
+_bench/
+bench/summary.json
+sample_data/assets_txt/vendor_docx_generated.txt
+
+## Playwright outputs (if run from root)
+ui/playwright-report/
+ui/test-results/
 # Python
 __pycache__/
 *.py[cod]
