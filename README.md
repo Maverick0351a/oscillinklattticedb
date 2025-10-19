@@ -60,6 +60,17 @@ flowchart LR
 
 Determinism contract: given the same inputs/config, you get bit‑identical indexes, receipts, and composite decisions.
 
+### Backend layout (modules)
+
+- api/app/core: service config, logging, tracing, Prometheus metrics, and centralized HTTP middleware
+- api/app/auth: unified JWT/JWKS auth guard and helpers
+- api/app/services: helper services (e.g., metadata store for display names)
+- api/app/routers: FastAPI routers for ops, manifest/search, and latticedb flows
+- api/app/schemas.py: Pydantic request models
+- api/app/main.py: app assembly, middleware, and router wiring
+
+For a deeper dive into the middleware ordering, request lifecycle, and observability, see `docs/ARCHITECTURE.md`.
+
 ## Mathematics and technical makeup
 
 We frame retrieval/composition as a well‑posed geometric optimization over a sparse, symmetric positive definite (SPD) system.
@@ -96,6 +107,8 @@ python -m venv .venv && source .venv/bin/activate
 pip install -e .[dev]
 uvicorn app.main:app --host 127.0.0.1 --port 8080
 ```
+
+Tip: copy `api/.env.example` to `api/.env` and adjust values for local limits/auth/metrics/tracing. The service auto-loads `.env`.
 
 ### (Optional) Start the UI
 
@@ -136,6 +149,86 @@ Invoke-RestMethod -Method Put -Uri "http://127.0.0.1:8080/v1/latticedb/lattice/<
 ```
 Then reload the manifest in the UI; you can also sort by display_name (and choose asc/desc) via the UI or API.
 
+## Operations: security, limits, observability
+
+The API applies a set of HTTP middlewares centrally for safety and predictable behavior:
+
+- Security headers: X-Content-Type-Options, Referrer-Policy, X-Frame-Options (HSTS optional)
+- Request size limit: rejects bodies over a configured max
+- Rate limiting: in-memory or Redis-backed, with metrics for limited requests
+- Request IDs: adds X-Request-ID when absent
+- Concurrency limiter: caps in-flight requests
+- Timeouts: wraps handlers to prevent long hangs
+- Metrics: Prometheus at `/metrics` (optional header protection)
+
+Tracing is optional via OpenTelemetry. See `docs/ARCHITECTURE.md` for the middleware ordering, config knobs, and request lifecycle.
+
+## Configuration reference (env vars)
+
+All settings are prefixed with LATTICEDB_ unless noted. Booleans accept 0/1. Lists (like CORS) accept JSON arrays (recommended).
+
+- Core
+  - LATTICEDB_DB_ROOT — path to database root (default: repo/latticedb)
+  - LATTICEDB_LOG_LEVEL — INFO|DEBUG|WARNING|ERROR
+  - LATTICEDB_CORS_ORIGINS — JSON array of allowed origins
+  - LATTICEDB_MAX_REQUEST_BYTES — max request body size in bytes
+- Limits & protection
+  - LATTICEDB_RATE_LIMIT_ENABLED — 0/1 to enable rate limiting
+  - LATTICEDB_RATE_LIMIT_REQUESTS — requests per period
+  - LATTICEDB_RATE_LIMIT_PERIOD_SECONDS — window length
+  - LATTICEDB_RATE_LIMIT_REDIS_URL — use Redis limiter when set
+  - LATTICEDB_TRUST_X_FORWARDED_FOR — 0/1 trust proxy client IP
+  - LATTICEDB_REQUEST_TIMEOUT_SECONDS — 0 disables
+  - LATTICEDB_MAX_CONCURRENCY — 0 disables
+  - LATTICEDB_ENABLE_HSTS — 0/1 add Strict-Transport-Security
+  - LATTICEDB_ENABLE_TEST_ENDPOINTS — 0/1 expose test-only routes
+- Auth
+  - LATTICEDB_API_KEY_REQUIRED, LATTICEDB_API_KEY — simple API key guard
+  - LATTICEDB_JWT_ENABLED — 0/1 enforce JWT on mutating endpoints
+  - LATTICEDB_JWT_SECRET — HS256 secret (default algorithm)
+  - LATTICEDB_JWT_ALGORITHMS — JSON array (e.g., ["HS256","RS256"]) 
+  - LATTICEDB_JWT_AUDIENCE, LATTICEDB_JWT_ISSUER — optional claims
+  - LATTICEDB_JWT_JWKS_URL — enable JWKS/RS256 validation when set
+  - LATTICEDB_JWT_LEEWAY — seconds of clock skew
+  - LATTICEDB_JWT_CACHE_TTL_SECONDS — JWKS cache TTL
+- Metrics
+  - METRICS_PROTECTED — 0/1 requires header to access /metrics (note: no prefix)
+  - LATTICEDB_METRICS_SECRET — required value for X-Admin-Secret
+- Tracing (OpenTelemetry)
+  - LATTICEDB_OTEL_ENABLED — 0/1
+  - LATTICEDB_OTEL_SERVICE_NAME — default: latticedb-api
+  - LATTICEDB_OTEL_EXPORTER_OTLP_ENDPOINT — http(s)://…
+  - LATTICEDB_OTEL_SAMPLE_RATIO — 0..1
+- SPD defaults
+  - LATTICEDB_SPD_DIM, LATTICEDB_SPD_K_NEIGHBORS
+  - LATTICEDB_SPD_LAMBDA_G, LATTICEDB_SPD_LAMBDA_C, LATTICEDB_SPD_LAMBDA_Q
+  - LATTICEDB_SPD_TOL, LATTICEDB_SPD_MAX_ITER
+- Embeddings
+  - LATTICEDB_EMBED_MODEL — preset or hf:<model-id>
+  - LATTICEDB_EMBED_DEVICE — cpu|cuda
+  - LATTICEDB_EMBED_BATCH_SIZE — int
+  - LATTICEDB_EMBED_STRICT_HASH — 0/1
+- LLM (optional)
+  - LATTICEDB_LLM_ENABLED — 0/1
+  - LATTICEDB_LLM_BACKEND — ollama|llama.cpp|custom
+  - LATTICEDB_LLM_ENDPOINT — http://127.0.0.1:11434
+  - LATTICEDB_LLM_MODEL — model name
+  - LATTICEDB_LLM_TEMPERATURE, LATTICEDB_LLM_TOP_P, LATTICEDB_LLM_MAX_TOKENS, LATTICEDB_LLM_SEED
+- Licensing
+  - LATTICEDB_LICENSE_MODE — dev|trial|prod
+  - LATTICEDB_LICENSE_ID, LATTICEDB_LICENSE_TIER, LATTICEDB_LICENSE_EXPIRY (ISO8601)
+  - LATTICEDB_SAAS_ALLOWED — 0/1
+
+Example (Windows PowerShell):
+
+```powershell
+$env:LATTICEDB_RATE_LIMIT_ENABLED = "1"
+$env:LATTICEDB_MAX_CONCURRENCY = "16"
+$env:LATTICEDB_REQUEST_TIMEOUT_SECONDS = "10"
+$env:METRICS_PROTECTED = "1"
+$env:LATTICEDB_METRICS_SECRET = "changeme"
+```
+
 ## Benchmarks that matter (and how to run)
 
 Reproducible scripts live in `api/scripts` and write artifacts under `_bench/` (and some to `bench/`) so CI can archive and you can graph over time. A quick subset also runs in CI via the “Bench Suite” workflow and uploads artifacts.
@@ -149,7 +242,7 @@ Reproducible scripts live in `api/scripts` and write artifacts under `_bench/` (
 
 ## Test coverage
 
-We keep tight, deterministic tests around the FastAPI service in `api/app/main.py` and gate PRs at 95% line coverage (branch coverage enabled).
+We keep tight, deterministic tests around the FastAPI service modules under `api/app/` (routers, core, auth, services) and gate PRs at 95% line coverage (branch coverage enabled).
 
 - In VS Code: run the task “API: Coverage (HTML)”. It executes the suite under coverage and writes a browsable report to `api/coverage_html/index.html`.
 - CLI (Windows PowerShell):
