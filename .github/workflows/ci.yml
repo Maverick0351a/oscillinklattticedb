@@ -56,6 +56,85 @@ jobs:
           cache-dependency-path: ui/package.json
       - name: Install
         run: npm ci || npm i
-      - name: Build
+      - name: Test with coverage
+        run: npm run test:coverage
+      - name: Upload UI coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-coverage
+          path: ui/coverage
+      - name: Upload UI coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          directory: ui
+          flags: ui
+          fail_ci_if_error: false
+          verbose: true
+
+  e2e:
+    name: E2E (UI ↔ API)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('api/pyproject.toml') }}
+      - name: Install API deps
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e api[dev]
+      - name: Seed sample data
+        run: |
+          python api/scripts/fetch_samples.py
+          python api/scripts/extract_assets.py --manifest bench/assets/manifest.yml --out sample_data/assets_txt
+          python api/scripts/build_lattices.py --input sample_data/assets_txt --out latticedb
+      - name: Start API (background)
+        working-directory: api
+        run: |
+          nohup uvicorn app.main:app --host 127.0.0.1 --port 8080 > ../_e2e_api.log 2>&1 & echo $! > ../_e2e_api.pid
+      - name: Wait for API ready
+        run: |
+          for i in {1..60}; do
+            if curl -sf http://127.0.0.1:8080/readyz > /dev/null; then echo "API ready"; exit 0; fi; sleep 1;
+          done; echo "API failed to become ready"; cat _e2e_api.log || true; exit 1
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: ui/package.json
+      - name: Install UI deps
+        working-directory: ui
+        run: npm ci || npm i
+      - name: Install Playwright browsers
+        working-directory: ui
+        run: npx playwright install --with-deps
+      - name: Build UI (points to local API)
+        working-directory: ui
+        env:
+          VITE_API_URL: http://127.0.0.1:8080
         run: npm run build
+      - name: Run Playwright tests
+        working-directory: ui
+        env:
+          UI_BASE_URL: http://127.0.0.1:8081
+        run: npx playwright test
+      - name: Upload Playwright HTML report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-playwright-report
+          path: ui/playwright-report
+      - name: Upload Playwright traces/videos
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-test-results
+          path: ui/test-results
  

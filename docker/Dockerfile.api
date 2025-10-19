@@ -23,13 +23,6 @@ USER appuser
 EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD python - <<'PY' || exit 1
-import sys, urllib.request
-try:
-	with urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=2) as r:
-		sys.exit(0 if r.status==200 else 1)
-except Exception:
-	sys.exit(1)
-PY
+  CMD ["python","-c","import sys, urllib.request\ntry:\n    with urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=2) as r:\n        sys.exit(0 if r.status==200 else 1)\nexcept Exception:\n    sys.exit(1)"]
 
 CMD ["uvicorn","app.main:app","--host","0.0.0.0","--port","8080"]
