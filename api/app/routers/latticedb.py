@@ -93,22 +93,37 @@ def api_route(req: RouteReq):
         _R = getattr(m, "Router", _Router)
     except Exception:
         _R = _Router
-    # Optional retrieval adapter (experimental): if specified, we can in the future
-    # use it for per-centroid recall. For now we resolve it for info only to avoid breaking behavior.
+    # Optional retrieval adapter (experimental): when configured, prefer adapter ranking over Router
     retrieval_backend = settings.retrieval_backend.strip()
     if retrieval_backend:
         try:
             from latticedb.retrieval.base import resolve_backend, set_determinism_env  # type: ignore
             if settings.deterministic_mode:
                 set_determinism_env(seed=0, threads=1)
-            _bid, _inst, _params = resolve_backend(retrieval_backend)
-            # Deferred: use backend to refine per-centroid recall
+            bid, inst, _params = resolve_backend(retrieval_backend)
+            # Build lightweight index over centroids if needed (backends read root/router/centroids.f32)
+            idx_dir = (root / "router" / "retrieval_index" / bid.replace(":", "_"))
+            # Try to provide dim for backends that guess reshaping
+            embed_dim = settings.spd_dim
+            try:
+                cfgp = root / "receipts" / "config.json"
+                if cfgp.exists():
+                    cfgj = json.loads(cfgp.read_text())
+                    embed_dim = int(cfgj.get("embed_dim", embed_dim))
+            except Exception:
+                pass
+            _ = inst.build(str(root), str(idx_dir), dim=int(embed_dim))
+            kres = max(1, int(req.k_lattices))
+            res = inst.query(v, k=kres)
+            # Map adapter candidates directly to API shape
+            return {"candidates": [{"lattice_id": str(c["id"]), "score": float(c["score"])} for c in res]}
         except Exception:
+            # Safe fallback to deterministic Router behavior
             pass
 
     r = _R(root)
     cand = r.route(v, k=req.k_lattices)
-    return {"candidates": [{"lattice_id": lid, "score": s} for lid,s in cand]}
+    return {"candidates": [{"lattice_id": lid, "score": s} for lid, s in cand]}
 
 
 @router.post("/v1/latticedb/compose", summary="Compose selected lattices into a context pack")
