@@ -1,0 +1,28 @@
+[run]
+branch = True
+source =
+    api/app
+
+[report]
+include =
+    api/app/*
+    api/app/**/*
+omit =
+    api/**/tests/*
+    api/**/__init__.py
+    api/scripts/*
+    bench/*
+    */site-packages/*
+    src/latticedb/*
+    */src/latticedb/*
+exclude_lines =
+    pragma: no cover
+    if TYPE_CHECKING:
+    if __name__ == .__main__.
+show_missing = True
+skip_covered = True
+precision = 2
+
+[html]
+directory = api/coverage_html
+title = LatticeDB API coverage
