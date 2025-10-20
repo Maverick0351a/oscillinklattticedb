@@ -33,7 +33,17 @@ jobs:
           python -m ruff check
       - name: Test with coverage (95% gate)
         run: |
-          python -m pytest --cov --cov-fail-under=95 --cov-report=term-missing --cov-report=xml:coverage.xml
+          coverage run -m pytest
+          coverage report --fail-under=95
+          coverage xml
+          coverage html
+      - name: Upload coverage HTML artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-coverage-html
+          path: api/coverage_html
+          if-no-files-found: warn
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         with:

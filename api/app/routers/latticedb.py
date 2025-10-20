@@ -13,7 +13,7 @@ from ..auth.jwt import auth_guard
 from ..schemas import IngestReq, RouteReq, ComposeReq, VerifyReq, ChatReq, ScanReq
 from ..core.metrics import SPD_DELTAH_LAST, SPD_RESIDUAL_LAST
 from latticedb.ingest import ingest_dir
-from latticedb.router import Router
+from latticedb.router import Router as _Router
 from latticedb.receipts import CompositeReceipt
 from latticedb.verify import verify_composite
 from latticedb.watcher import single_scan as watcher_single_scan
@@ -87,18 +87,29 @@ def api_route(req: RouteReq):
         pass
     be = load_model(model_id, device=device, batch_size=bsz, strict_hash=strict)
     v = be.embed_queries([req.q])[0]
-    r = Router(root)
+    # Resolve Router via app.main to allow tests to monkeypatch m.Router
+    try:
+        from .. import main as m  # type: ignore
+        _R = getattr(m, "Router", _Router)
+    except Exception:
+        _R = _Router
+    r = _R(root)
     cand = r.route(v, k=req.k_lattices)
     return {"candidates": [{"lattice_id": lid, "score": s} for lid,s in cand]}
 
 
 @router.post("/v1/latticedb/compose", summary="Compose selected lattices into a context pack")
 def api_compose(req: ComposeReq, _auth=auth_guard()):
-    from latticedb.router import Router
+    from latticedb.router import Router as _RouterLocal
     from latticedb.composite import composite_settle
     from latticedb.embeddings import load_model, preset_meta
     root = Path(req.db_path) if req.db_path else Path(settings.db_root)
-    cents, ids = Router(root).load_centroids()
+    try:
+        from .. import main as m  # type: ignore
+        _R = getattr(m, "Router", _RouterLocal)
+    except Exception:
+        _R = _RouterLocal
+    cents, ids = _R(root).load_centroids()
     id_to_idx = {lid:i for i,lid in enumerate(ids)}
     sel_idx = [id_to_idx[i] for i in req.lattice_ids if i in id_to_idx]
     k = req.k or settings.spd_k_neighbors

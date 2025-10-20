@@ -3,11 +3,11 @@
 Self‑building, offline RAG you can trust. LatticeDB ingests your documents locally, builds a scalable, semantically sound geometric database, and answers with deterministic receipts and a DB Merkle root so you can verify exactly how every result was produced — no cloud, no third‑party vector DB.
 
 <p align="left">
-  <a href="https://github.com/Maverick0351a/oscillinklattticedb/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Maverick0351a/oscillinklattticedb/ci.yml?label=CI"></a>
-  <a href="https://app.codecov.io/gh/Maverick0351a/oscillinklattticedb"><img alt="Coverage" src="https://img.shields.io/codecov/c/github/Maverick0351a/oscillinklattticedb?flag=api&label=Coverage"></a>
-  <a href="https://github.com/Maverick0351a/oscillinklattticedb/releases"><img alt="Release" src="https://img.shields.io/github/v/release/Maverick0351a/oscillinklattticedb"></a>
+  <a href="https://github.com/Maverick0351a/oscillink-latticedb/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Maverick0351a/oscillink-latticedb/ci.yml?label=CI"></a>
+  <a href="https://app.codecov.io/gh/Maverick0351a/oscillink-latticedb"><img alt="Coverage" src="https://img.shields.io/codecov/c/github/Maverick0351a/oscillink-latticedb?flag=api&label=Coverage"></a>
+  <a href="https://github.com/Maverick0351a/oscillink-latticedb/releases"><img alt="Release" src="https://img.shields.io/github/v/release/Maverick0351a/oscillink-latticedb"></a>
   <a href="/LICENSE-LATTICEDB"><img alt="License" src="https://img.shields.io/badge/License-BUSL--1.1-blue"></a>
-  <a href="https://github.com/Maverick0351a/oscillinklattticedb/actions/workflows/ci.yml"><img alt="E2E" src="https://img.shields.io/badge/E2E-Playwright-green"></a>
+  <a href="https://github.com/Maverick0351a/oscillink-latticedb/actions/workflows/ci.yml"><img alt="E2E" src="https://img.shields.io/badge/E2E-Playwright-green"></a>
   
 </p>
 

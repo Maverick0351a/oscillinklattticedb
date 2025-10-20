@@ -25,6 +25,7 @@ jobs:
           context: .
           file: docker/Dockerfile.api
           push: false
+          load: true
           tags: local/oscillink-api:ci
 
       - name: Build UI image
@@ -33,6 +34,7 @@ jobs:
           context: .
           file: docker/Dockerfile.ui
           push: false
+          load: true
           tags: local/oscillink-ui:ci
 
       - name: Run Trivy scan (API)
