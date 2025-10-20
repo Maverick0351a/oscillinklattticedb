@@ -1,0 +1,33 @@
+[run]
+branch = True
+source =
+    app
+omit =
+    */tests/*
+    */__init__.py
+    scripts/*
+    bench/*
+    */site-packages/*
+    # Omit all internal LatticeDB engine modules from API coverage scope
+    src/latticedb/*
+    */src/latticedb/*
+
+[report]
+include =
+    app/*
+    app/**/*
+
+exclude_lines =
+    pragma: no cover
+    if TYPE_CHECKING:
+    if __name__ == .__main__.
+show_missing = True
+skip_covered = True
+precision = 2
+omit =
+    src/latticedb/*
+    */src/latticedb/*
+
+[html]
+directory = coverage_html
+title = LatticeDB API coverage

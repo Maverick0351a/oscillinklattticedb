@@ -90,6 +90,9 @@ class Settings(BaseSettings):
     llm_top_p: float = float(os.environ.get("LATTICEDB_LLM_TOP_P", "1.0"))
     llm_max_tokens: int = int(os.environ.get("LATTICEDB_LLM_MAX_TOKENS", "512"))
     llm_seed: int = int(os.environ.get("LATTICEDB_LLM_SEED", "0"))
+    # Retrieval adapters (optional)
+    retrieval_backend: str = os.environ.get("LATTICEDB_RETRIEVAL_BACKEND", "")
+    deterministic_mode: bool = bool(int(os.environ.get("OSC_DETERMINISTIC", os.environ.get("LATTICEDB_DETERMINISTIC", "0"))))
 
 
 settings = Settings()

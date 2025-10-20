@@ -34,6 +34,11 @@ dev = [
   "faiss-cpu>=1.7.4",
   "psutil>=5.9.0"
 ]
+retrieval = [
+  "faiss-cpu>=1.7.4",
+  "hnswlib>=0.8.0",
+  "tantivy>=0.20.0",
+]
 embeddings = [
   "transformers==4.44.2",
   "torch>=2.0.0",

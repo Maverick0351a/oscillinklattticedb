@@ -1,5 +1,6 @@
 ## Generated DB and bench artifacts
-latticedb/
+/latticedb/
+!api/src/latticedb/**
 _bench/
 bench/summary.json
 sample_data/assets_txt/vendor_docx_generated.txt
@@ -22,6 +23,7 @@ __pycache__/
 *.env
 .pytest_cache/
 .coverage*
+!.coveragerc
 coverage.xml
 coverage_html/
 ui/coverage/

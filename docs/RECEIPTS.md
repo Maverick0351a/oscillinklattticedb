@@ -36,6 +36,8 @@ Fields (subset):
 - epsilon, tau (gating thresholds)
 - filters: optional selection filters applied
 - model_sha256, state_sig (computed as above)
+ - retrieval_backend (optional): backend id like "faiss:flat", "hnswlib", "bm25:tantivy", or "hybrid"
+ - retrieval_params (optional): params used (e.g., weights for hybrid)
 
 ## Verification flow
 1. Recompute sha256 over CompositeReceipt normalized JSON → compare to state_sig.

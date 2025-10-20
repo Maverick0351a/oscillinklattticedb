@@ -93,6 +93,19 @@ def api_route(req: RouteReq):
         _R = getattr(m, "Router", _Router)
     except Exception:
         _R = _Router
+    # Optional retrieval adapter (experimental): if specified, we can in the future
+    # use it for per-centroid recall. For now we resolve it for info only to avoid breaking behavior.
+    retrieval_backend = settings.retrieval_backend.strip()
+    if retrieval_backend:
+        try:
+            from latticedb.retrieval.base import resolve_backend, set_determinism_env  # type: ignore
+            if settings.deterministic_mode:
+                set_determinism_env(seed=0, threads=1)
+            _bid, _inst, _params = resolve_backend(retrieval_backend)
+            # Deferred: use backend to refine per-centroid recall
+        except Exception:
+            pass
+
     r = _R(root)
     cand = r.route(v, k=req.k_lattices)
     return {"candidates": [{"lattice_id": lid, "score": s} for lid,s in cand]}
@@ -151,6 +164,8 @@ def api_compose(req: ComposeReq, _auth=auth_guard()):
         batch_size=q_meta.get("batch_size"),
         pooling=q_meta.get("pooling"),
         strict_hash=q_meta.get("strict_hash"),
+        retrieval_backend=(settings.retrieval_backend.strip() or None),
+        retrieval_params=None,
     )
     if not (resid <= req.epsilon and dH >= req.tau):
         return {"context_pack": {"question": req.q, "working_set": [], "receipts": {"composite": comp.model_dump()} }}
