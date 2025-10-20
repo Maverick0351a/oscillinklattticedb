@@ -85,3 +85,21 @@ def test_hybrid_backend_determinism(tmp_path):
     assert res[0]["id"].startswith("L-000001")
     # Scores must be monotonic non-increasing and deterministic
     assert res[0]["score"] >= res[1]["score"]
+
+
+def test_hybrid_weight_parsing_variants():
+    # Colon-free short form
+    inst1, meta1 = make_hybrid_backend("0.7vec,0.3bm25")
+    assert abs(meta1["weights"]["vec"] - 0.7) < 1e-9
+    assert abs(meta1["weights"]["lex"] - 0.3) < 1e-9
+    # Explicit key form
+    inst2, meta2 = make_hybrid_backend("vec=0.6,lex=0.4")
+    assert abs(meta2["weights"]["vec"] - 0.6) < 1e-9
+    assert abs(meta2["weights"]["lex"] - 0.4) < 1e-9
+
+
+def test_resolve_backend_unknown_fallback():
+    bid, inst, params = resolve_backend("unknown:thing")
+    assert bid == "faiss:flat"
+    assert hasattr(inst, "query")
+    assert isinstance(params, dict)
