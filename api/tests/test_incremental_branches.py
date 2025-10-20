@@ -89,7 +89,6 @@ def test_compose_threshold_short_circuit(monkeypatch, tmp_path: Path):
 
 def test_route_model_override(monkeypatch, tmp_path: Path):
     import app.main as m
-    from app.routers import latticedb as lr
 
     # Write config.json to override embed_model
     (tmp_path / "receipts").mkdir(parents=True, exist_ok=True)
