@@ -6,7 +6,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from importlib.metadata import version as pkg_version, PackageNotFoundError
 from pathlib import Path
 from typing import Any
 
@@ -114,9 +113,11 @@ def livez():
 
 @router.get("/version", summary="Service version")
 def version():
+    # Resolve from app.main so tests can monkeypatch pkg_version and PackageNotFoundError
+    from .. import main as m  # type: ignore
     try:
-        ver = pkg_version("oscillink-latticedb")
-    except PackageNotFoundError:
+        ver = m.pkg_version("oscillink-latticedb")
+    except m.PackageNotFoundError:  # type: ignore[attr-defined]
         ver = "0.0.0+dev"
     git_sha = os.environ.get("GIT_SHA", "unknown")
     return {"version": ver, "git_sha": git_sha}

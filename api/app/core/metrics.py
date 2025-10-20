@@ -66,7 +66,10 @@ async def metrics_middleware(request: Request, call_next):
     status_code = None
     try:
         try:
-            REQ_INPROGRESS.inc()
+            # Allow tests to swap the gauge via app.main
+            from .. import main as _m  # type: ignore
+            g = getattr(_m, "REQ_INPROGRESS", REQ_INPROGRESS)
+            g.inc()
         except Exception:
             pass
         response = await call_next(request)
@@ -83,7 +86,9 @@ async def metrics_middleware(request: Request, call_next):
         except Exception:
             pass
         try:
-            REQ_INPROGRESS.dec()
+            from .. import main as _m  # type: ignore
+            g = getattr(_m, "REQ_INPROGRESS", REQ_INPROGRESS)
+            g.dec()
         except Exception:
             pass
 
