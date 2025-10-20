@@ -33,10 +33,10 @@ jobs:
           python -m ruff check
       - name: Test with coverage (95% gate)
         run: |
-          coverage run -m pytest
-          coverage report --fail-under=95
-          coverage xml
-          coverage html
+          coverage run --rcfile .coveragerc -m pytest
+          coverage report --rcfile .coveragerc --fail-under=95
+          coverage xml --rcfile .coveragerc
+          coverage html --rcfile .coveragerc
       - name: Upload coverage HTML artifact
         if: always()
         uses: actions/upload-artifact@v4
