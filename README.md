@@ -1,5 +1,16 @@
 # Oscillink LatticeDB — Local‑First, Verifiable RAG Database
 
+<p align="center">
+  <picture>
+    <!-- Prefer vector when available -->
+    <source type="image/svg+xml" srcset="docs/assets/oscillink-logo.svg">
+    <!-- Dark mode variant -->
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/oscillink-logo-dark.png">
+    <!-- Fallback PNG -->
+    <img src="docs/assets/oscillink-logo.png" alt="Oscillink logo" width="240" />
+  </picture>
+</p>
+
 Self‑building, offline RAG you can trust. LatticeDB ingests your documents locally, builds a scalable, semantically sound geometric database, and answers with deterministic receipts and a DB Merkle root so you can verify exactly how every result was produced — no cloud, no third‑party vector DB.
 
 <p align="left">
@@ -149,6 +160,35 @@ Invoke-RestMethod -Method Put -Uri "http://127.0.0.1:8080/v1/latticedb/lattice/<
 ```
 Then reload the manifest in the UI; you can also sort by display_name (and choose asc/desc) via the UI or API.
 
+## Safe base path (recommended)
+
+For filesystem safety and clear receipts, set a trusted base directory for the on-disk database and any retrieval indexes.
+
+- Set LATTICEDB_DB_ROOT to your database root directory (e.g., the latticedb folder you build to)
+- When set, retrieval adapters and hashing utilities only read/write inside this base; outside paths are rejected and adapters fall back to deterministic stub behavior
+- In dev/test, if LATTICEDB_DB_ROOT is not set, reads may be allowed for tests, but writes outside a base are still blocked; in CI and production, always set it
+
+Examples
+
+- Windows PowerShell
+
+```powershell
+$env:LATTICEDB_DB_ROOT = (Resolve-Path "latticedb").Path
+```
+
+- Bash (macOS/Linux)
+
+```bash
+export LATTICEDB_DB_ROOT="$(pwd)/latticedb"
+```
+
+Notes
+
+- The API no longer reads user-controlled per-DB config files; it uses configured settings. The base path only constrains IO for safety and determinism.
+- Optional retrieval adapters remain off by default. To enable one locally after setting the base, install the extra and pick a backend:
+  - PowerShell: `Set-Location "api"; pip install -e .[retrieval]`; then `$env:LATTICEDB_RETRIEVAL_BACKEND = "faiss:flat"`
+  - For bit-stable demos, set `OSC_DETERMINISTIC=1` or `LATTICEDB_DETERMINISTIC=1`.
+
 ## Operations: security, limits, observability
 
 The API applies a set of HTTP middlewares centrally for safety and predictable behavior:
@@ -269,12 +309,39 @@ xdg-open coverage_html/index.html  # Linux
 
 In CI, we enforce `coverage report --fail-under=95` and upload the HTML report as an artifact for inspection.
 
+Tip: After you’ve generated the report once, you can run the VS Code task “Open: API Coverage Report” to quickly reopen `api/coverage_html/index.html` without rerunning tests.
+
 UI coverage scope: The UI job reports coverage for UI source code only (unit tests via Vitest + jsdom). It does not imply runtime coverage of API features, bench scripts, or the ingestion pipeline. For full-stack validation, see the E2E job which runs Playwright against a live API and uploads an HTML report and traces as artifacts.
 
 Artifacts to expect on CI runs:
 - ui-coverage: Vitest coverage report for UI unit tests
 - e2e-playwright-report: HTML report for UI E2E tests
 - e2e-test-results: Playwright traces/videos for failures
+
+## Retrieval backends (optional)
+
+Your built-in lattice router + SPD composer remains the default differentiator. For teams that prefer familiar retrieval engines, you can optionally enable local adapters behind a tiny interface. These are off by default and have no server dependencies.
+
+- Vector: faiss:flat (exact; numpy-backed fallback) — deterministic and simplest for <100k chunks
+- Vector: hnswlib (ANN; CPU, zero-server) — good laptop demo at 100k–1M vectors
+- Lexical: bm25:tantivy — useful fallback on OCR‑noisy or code snippets
+- Hybrid: combine vector + BM25 deterministically via weighted normalized scores
+
+Determinism notes:
+- Set OSC_DETERMINISTIC=1 (or LATTICEDB_DETERMINISTIC=1) to pin seeds/threads where supported
+- Stable tie-breaking by (-score, id)
+- Build receipts include backend id/version/params and an index hash over on-disk artifacts
+
+Enable adapters by installing the optional extra in the API project and setting an env var:
+
+```powershell
+Set-Location "api"; pip install -e .[retrieval]
+$env:LATTICEDB_RETRIEVAL_BACKEND = "faiss:flat"  # or hnswlib | bm25 | hybrid:0.7vec,0.3bm25
+```
+
+Receipts: Composite receipts carry optional retrieval provenance (backend id/params). DB receipts remain unchanged.
+
+Docs: See `docs/RECEIPTS.md`, `docs/BENCHMARKS.md`, and `docs/OPERATIONS.md` for adapter specifics and guidance.
 
 ## Bring your own models (BYOM)
 

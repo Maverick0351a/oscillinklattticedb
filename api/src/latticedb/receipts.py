@@ -69,6 +69,9 @@ class CompositeReceipt(BaseModel):
     batch_size: Optional[int] = None
     pooling: Optional[str] = None
     strict_hash: Optional[bool] = None
+    # Retrieval provenance (optional)
+    retrieval_backend: Optional[str] = None
+    retrieval_params: Optional[Dict[str, Any]] = None
     state_sig: str
 
     @staticmethod
@@ -90,6 +93,7 @@ class ShardReceipt(BaseModel):
     sealed: bool | None = None
     index_meta: Optional[Dict[str, Any]] = None
     index_sha256: Optional[str] = None
+    retrieval_build_receipt: Optional[Dict[str, Any]] = None
     state_sig: str
 
     @staticmethod

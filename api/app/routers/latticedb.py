@@ -77,14 +77,8 @@ def api_route(req: RouteReq):
     device = req.embed_device or settings.embed_device
     bsz = int(req.embed_batch_size or settings.embed_batch_size)
     strict = bool(req.embed_strict_hash if req.embed_strict_hash is not None else settings.embed_strict_hash)
-    try:
-        root = Path(req.db_path) if req.db_path else Path(settings.db_root)
-        cfgp = root/"receipts"/"config.json"
-        if cfgp.exists():
-            cfg = json.loads(cfgp.read_text())
-            model_id = str(cfg.get("embed_model", model_id))
-    except Exception:
-        pass
+    # Resolve DB root without reading user-controlled config files
+    root = Path(req.db_path) if req.db_path else Path(settings.db_root)
     be = load_model(model_id, device=device, batch_size=bsz, strict_hash=strict)
     v = be.embed_queries([req.q])[0]
     # Resolve Router via app.main to allow tests to monkeypatch m.Router
@@ -93,9 +87,29 @@ def api_route(req: RouteReq):
         _R = getattr(m, "Router", _Router)
     except Exception:
         _R = _Router
+    # Optional retrieval adapter (experimental): when configured, prefer adapter ranking over Router
+    retrieval_backend = settings.retrieval_backend.strip()
+    if retrieval_backend:
+        try:
+            from latticedb.retrieval.base import resolve_backend, set_determinism_env  # type: ignore
+            if settings.deterministic_mode:
+                set_determinism_env(seed=0, threads=1)
+            bid, inst, _params = resolve_backend(retrieval_backend)
+            # Build lightweight index over centroids if needed (backends read root/router/centroids.f32)
+            idx_dir = (root / "router" / "retrieval_index" / bid.replace(":", "_"))
+            # Provide embedding dimension from settings to avoid reading user-controlled files
+            _ = inst.build(str(root), str(idx_dir), dim=int(settings.spd_dim))
+            kres = max(1, int(req.k_lattices))
+            res = inst.query(v, k=kres)
+            # Map adapter candidates directly to API shape
+            return {"candidates": [{"lattice_id": str(c["id"]), "score": float(c["score"])} for c in res]}
+        except Exception:
+            # Safe fallback to deterministic Router behavior
+            pass
+
     r = _R(root)
     cand = r.route(v, k=req.k_lattices)
-    return {"candidates": [{"lattice_id": lid, "score": s} for lid,s in cand]}
+    return {"candidates": [{"lattice_id": lid, "score": s} for lid, s in cand]}
 
 
 @router.post("/v1/latticedb/compose", summary="Compose selected lattices into a context pack")
@@ -120,14 +134,11 @@ def api_compose(req: ComposeReq, _auth=auth_guard()):
     max_iter = req.max_iter or settings.spd_max_iter
     dH, iters, resid, ehash = composite_settle(cents, sel_idx, k=k, lambda_G=lamG, lambda_C=lamC, lambda_Q=lamQ, tol=tol, max_iter=max_iter)
 
+    # Build preset metadata using configured embedding settings without reading user-controlled files
+    q_meta = {}
     try:
-        cfgp = root/"receipts"/"config.json"
-        q_meta = {}
-        if cfgp.exists():
-            cfg = json.loads(cfgp.read_text())
-            model_id = str(cfg.get("embed_model", settings.embed_model))
-            be = load_model(model_id, device=settings.embed_device, batch_size=int(settings.embed_batch_size), strict_hash=bool(settings.embed_strict_hash))
-            q_meta = preset_meta(be)
+        be = load_model(settings.embed_model, device=settings.embed_device, batch_size=int(settings.embed_batch_size), strict_hash=bool(settings.embed_strict_hash))
+        q_meta = preset_meta(be)
     except Exception:
         q_meta = {}
 
@@ -151,6 +162,8 @@ def api_compose(req: ComposeReq, _auth=auth_guard()):
         batch_size=q_meta.get("batch_size"),
         pooling=q_meta.get("pooling"),
         strict_hash=q_meta.get("strict_hash"),
+        retrieval_backend=(settings.retrieval_backend.strip() or None),
+        retrieval_params=None,
     )
     if not (resid <= req.epsilon and dH >= req.tau):
         return {"context_pack": {"question": req.q, "working_set": [], "receipts": {"composite": comp.model_dump()} }}
