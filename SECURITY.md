@@ -19,7 +19,8 @@ Retrieval adapters (FAISS flat fallback, hnswlib, bm25 stub) restrict file IO to
 
 - Configure the base via the `LATTICEDB_DB_ROOT` environment variable.
 - When set, all reads/writes must be within this directory; otherwise, adapters return deterministic stub receipts and avoid writing.
-- In dev/test, if `LATTICEDB_DB_ROOT` is not set, reads are permitted to keep unit tests functional, but writes outside the base are still blocked.
+- Canonical validation: All adapter IO paths go through a helper that canonicalizes and validates paths against the trusted base (or a narrow dev/test exception below). We do not join user input directly into filesystem operations.
+- In dev/test, if `LATTICEDB_DB_ROOT` is not set, we permit only absolute paths strictly under the system temporary directory (e.g., `pytest`'s `tmp_path`). All other locations are rejected. This supports local testing while preventing arbitrary filesystem access. Writes outside the base/temp are blocked.
 
 The API router does not read per-DB configs from user-controlled paths and instead uses configured settings.
 
