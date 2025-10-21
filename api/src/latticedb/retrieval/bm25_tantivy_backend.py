@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 from pathlib import Path
 
-from .base import RetrievalBackend, Candidate, BuildReceipt, dir_tree_sha256
+from .base import RetrievalBackend, Candidate, BuildReceipt, dir_tree_sha256, _get_safe_base, is_within_base
 
 
 class _TantivyBM25Backend:
@@ -25,6 +25,16 @@ class _TantivyBM25Backend:
     def build(self, vectors_or_docs_path: str, out_dir: str, **kwargs: Any) -> BuildReceipt:
         # In scaffold mode we don't actually build; just hash any existing folder
         outp = Path(out_dir)
+        base = _get_safe_base()
+        if base is not None and not is_within_base(base, outp):
+            # Do not write outside base; return deterministic stub
+            return BuildReceipt(
+                backend_id="bm25:tantivy",
+                backend_version="tantivy-py" if self._ok else "stub",
+                params={"schema": "default"},
+                index_hash=_hash_stub(),
+                training_hash=None,
+            )
         outp.mkdir(parents=True, exist_ok=True)
         # Write a tiny marker for hashing deterministically
         (outp/"bm25.marker").write_text("bm25:tantivy")
@@ -48,4 +58,9 @@ class _TantivyBM25Backend:
 
 def make_bm25_backend() -> RetrievalBackend:
     return _TantivyBM25Backend()
+
+
+def _hash_stub() -> str:
+    import hashlib as _h
+    return _h.sha256(b"no-write").hexdigest()
 

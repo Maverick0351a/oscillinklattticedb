@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 from pathlib import Path
 
-from .base import RetrievalBackend, Candidate, BuildReceipt, set_determinism_env, dir_tree_sha256
+from .base import RetrievalBackend, Candidate, BuildReceipt, set_determinism_env, dir_tree_sha256, _get_safe_base, is_within_base
 
 
 class _NumpyFlatBackend:
@@ -23,6 +23,33 @@ class _NumpyFlatBackend:
     def build(self, vectors_or_docs_path: str, out_dir: str, **kwargs: Any) -> BuildReceipt:
         set_determinism_env(kwargs.get("random_seed"), kwargs.get("threads"))
         p = Path(vectors_or_docs_path)
+        base = _get_safe_base()
+        # If a base is configured, restrict IO strictly to within base
+        if base is not None and not is_within_base(base, p):
+            # Disallow access; build an empty index deterministically
+            X = self._np.zeros((0, int(kwargs.get("dim", 32))), dtype=self._np.float32)
+            self._X = X
+            self._ids = []
+            outp = Path(out_dir)
+            if base is not None and not is_within_base(base, outp):
+                # If output is outside base, do not write to filesystem
+                index_hash = _hash_stub()
+                return BuildReceipt(
+                    backend_id="faiss:flat",
+                    backend_version="numpy-fallback",
+                    params=self._params,
+                    index_hash=index_hash,
+                    training_hash=None,
+                )
+            outp.mkdir(parents=True, exist_ok=True)
+            index_hash = dir_tree_sha256(outp)
+            return BuildReceipt(
+                backend_id="faiss:flat",
+                backend_version="numpy-fallback",
+                params=self._params,
+                index_hash=index_hash,
+                training_hash=None,
+            )
         X = None
         ids: List[str] = []
         # Try a few common locations for centroids used by the router
@@ -40,6 +67,16 @@ class _NumpyFlatBackend:
         self._X = X.astype(self._np.float32)
         self._ids = ids or [f"L-{i+1:06d}" for i in range(self._X.shape[0])]
         outp = Path(out_dir)
+        if base is not None and not is_within_base(base, outp):
+            # Do not write outside of base
+            index_hash = _hash_stub()
+            return BuildReceipt(
+                backend_id="faiss:flat",
+                backend_version="numpy-fallback",
+                params=self._params,
+                index_hash=index_hash,
+                training_hash=None,
+            )
         outp.mkdir(parents=True, exist_ok=True)
         index_hash = dir_tree_sha256(outp)
         return BuildReceipt(
@@ -93,4 +130,9 @@ def make_faiss_backend(mode: str) -> RetrievalBackend:
         return b
     except Exception:
         return _NumpyFlatBackend()
+
+
+def _hash_stub() -> str:
+    import hashlib as _h
+    return _h.sha256(b"no-write").hexdigest()
 

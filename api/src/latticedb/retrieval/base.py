@@ -79,6 +79,37 @@ def dir_tree_sha256(root: Path) -> str:
     return h.hexdigest()
 
 
+# ---- Safe path utilities to mitigate path injection -----------------------
+
+def _get_safe_base() -> Optional[Path]:
+    """Resolve a safe base directory from environment.
+
+    If LATTICEDB_DB_ROOT is set, only allow reads/writes under this directory.
+    If not set, callers should treat paths as untrusted and avoid filesystem IO.
+    """
+    try:
+        base = os.environ.get("LATTICEDB_DB_ROOT")
+        if not base:
+            return None
+        p = Path(base).resolve()
+        return p
+    except Exception:
+        return None
+
+
+def is_within_base(base: Path, candidate: Path) -> bool:
+    try:
+        return candidate.resolve().is_relative_to(base)
+    except Exception:
+        try:
+            # Python <3.9 fallback just in case: compare string prefix of resolved paths
+            b = str(base.resolve()).replace("\\", "/")
+            c = str(candidate.resolve()).replace("\\", "/")
+            return c.startswith(b.rstrip("/") + "/") or c == b
+        except Exception:
+            return False
+
+
 def set_determinism_env(seed: int | None = None, threads: int | None = None) -> None:
     """Optionally pin seeds/threads for deterministic builds/queries.
 

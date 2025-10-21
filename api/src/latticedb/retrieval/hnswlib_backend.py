@@ -6,7 +6,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 from pathlib import Path
 
-from .base import RetrievalBackend, Candidate, BuildReceipt, set_determinism_env, dir_tree_sha256
+from .base import RetrievalBackend, Candidate, BuildReceipt, set_determinism_env, dir_tree_sha256, _get_safe_base, is_within_base
 
 
 class _HnswlibBackend:
@@ -24,6 +24,32 @@ class _HnswlibBackend:
         M = int(kwargs.get("M", self._params["M"]))
         efC = int(kwargs.get("efConstruction", self._params["efConstruction"]))
         p = Path(vectors_or_docs_path)
+        base = _get_safe_base()
+        if base is not None and not is_within_base(base, p):
+            # Disallow reading outside of base; build an empty index and avoid writing outside base
+            X = self._np.zeros((0, int(kwargs.get("dim", 32))), dtype=self._np.float32)
+            ids: List[str] = []
+            self._ids = ids
+            self._index = None
+            outp = Path(out_dir)
+            if base is not None and not is_within_base(base, outp):
+                index_hash = _hash_stub()
+                return BuildReceipt(
+                    backend_id="hnswlib",
+                    backend_version="hnswlib",
+                    params={"M": int(kwargs.get("M", 32)), "efConstruction": int(kwargs.get("efConstruction", 200)), "efSearch": int(kwargs.get("efSearch", 64))},
+                    index_hash=index_hash,
+                    training_hash=None,
+                )
+            outp.mkdir(parents=True, exist_ok=True)
+            index_hash = dir_tree_sha256(outp)
+            return BuildReceipt(
+                backend_id="hnswlib",
+                backend_version="hnswlib",
+                params={"M": int(kwargs.get("M", 32)), "efConstruction": int(kwargs.get("efConstruction", 200)), "efSearch": int(kwargs.get("efSearch", 64))},
+                index_hash=index_hash,
+                training_hash=None,
+            )
         if p.is_file() and p.suffix == ".npy":
             X = self._np.load(p).astype(self._np.float32)
         elif p.is_dir() and (p/"router/centroids.f32").exists():
@@ -42,6 +68,15 @@ class _HnswlibBackend:
         self._ids = ids
         self._index = idx
         outp = Path(out_dir)
+        if base is not None and not is_within_base(base, outp):
+            index_hash = _hash_stub()
+            return BuildReceipt(
+                backend_id="hnswlib",
+                backend_version="hnswlib",
+                params={"M": M, "efConstruction": efC, "efSearch": int(kwargs.get("efSearch", 64))},
+                index_hash=index_hash,
+                training_hash=None,
+            )
         outp.mkdir(parents=True, exist_ok=True)
         # Persist index for hashing
         (outp/"hnsw_index.bin").write_bytes(idx.get_current_count().to_bytes(8, 'little'))
@@ -80,4 +115,9 @@ def make_hnswlib_backend() -> RetrievalBackend:
         # Fallback to numpy flat
         from .faiss_backend import make_faiss_backend
         return make_faiss_backend("flat")
+
+
+def _hash_stub() -> str:
+    import hashlib as _h
+    return _h.sha256(b"no-write").hexdigest()
 
