@@ -66,7 +66,9 @@ def dir_tree_sha256(root: Path) -> str:
     # Enforce safe base if configured
     try:
         base = _get_safe_base()
-        if base is not None and not is_within_base(base, root):
+        if base is None:
+            return _sha256_bytes(b"no-walk")
+        if not is_within_base(base, root):
             return _sha256_bytes(b"no-walk")
     except Exception:
         # If safety check fails, avoid walking
