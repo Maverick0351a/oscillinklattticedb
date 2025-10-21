@@ -5,6 +5,7 @@ from typing import Tuple
 import numpy as np
 
 from latticedb.retrieval.base import resolve_backend, RetrievalBackend
+import os
 from latticedb.retrieval.faiss_backend import make_faiss_backend
 from latticedb.retrieval.hybrid import make_hybrid_backend
 
@@ -37,10 +38,13 @@ def _build_dummy_index(tmp_path) -> Tuple[RetrievalBackend, np.ndarray]:
         dtype=np.float32,
     )
     b = make_faiss_backend("flat")
+    # Configure safe base to the tmp dir and use relative paths under it
+    base = tmp_path
+    os.environ["LATTICEDB_DB_ROOT"] = str(base)
     # Save to .npy so build can load
-    npy = tmp_path / "vecs.npy"
+    npy = base / "vecs.npy"
     np.save(npy, X)
-    _ = b.build(str(npy), str(tmp_path / "out"))
+    _ = b.build("vecs.npy", "out")
     return b, X
 
 
@@ -76,9 +80,11 @@ def test_hybrid_backend_determinism(tmp_path):
         ],
         dtype=np.float32,
     )
-    npy = tmp_path / "vecs.npy"
+    base = tmp_path
+    os.environ["LATTICEDB_DB_ROOT"] = str(base)
+    npy = base / "vecs.npy"
     np.save(npy, X)
-    _ = inst.build(str(npy), str(tmp_path / "out"))
+    _ = inst.build("vecs.npy", "out")
     q = np.array([1.0, 0.0, 0.0], dtype=np.float32)
     res = inst.query(q, k=2)
     assert len(res) == 2
