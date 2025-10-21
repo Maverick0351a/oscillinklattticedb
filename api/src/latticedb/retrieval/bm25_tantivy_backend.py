@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 from pathlib import Path
 
-from .base import RetrievalBackend, Candidate, BuildReceipt, dir_tree_sha256, _get_safe_base, is_within_base
+from .base import RetrievalBackend, Candidate, BuildReceipt, dir_tree_sha256, _get_safe_base, canonicalize_and_validate
 
 
 class _TantivyBM25Backend:
@@ -24,9 +24,9 @@ class _TantivyBM25Backend:
 
     def build(self, vectors_or_docs_path: str, out_dir: str, **kwargs: Any) -> BuildReceipt:
         # In scaffold mode we don't actually build; just hash any existing folder
-        outp = Path(out_dir)
         base = _get_safe_base()
-        if base is not None and not is_within_base(base, outp):
+        outp = canonicalize_and_validate(out_dir, base)
+        if outp is None:
             # Do not write outside base; return deterministic stub
             return BuildReceipt(
                 backend_id="bm25:tantivy",

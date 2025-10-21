@@ -4,9 +4,17 @@ SPDX-License-Identifier: BUSL-1.1
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
-from pathlib import Path
+from pathlib import Path  # noqa: F401
 
-from .base import RetrievalBackend, Candidate, BuildReceipt, set_determinism_env, dir_tree_sha256, _get_safe_base, is_within_base
+from .base import (
+    RetrievalBackend,
+    Candidate,
+    BuildReceipt,
+    set_determinism_env,
+    dir_tree_sha256,
+    _get_safe_base,
+    canonicalize_and_validate,
+)
 
 
 class _HnswlibBackend:
@@ -23,16 +31,17 @@ class _HnswlibBackend:
         set_determinism_env(kwargs.get("random_seed"), kwargs.get("threads"))
         M = int(kwargs.get("M", self._params["M"]))
         efC = int(kwargs.get("efConstruction", self._params["efConstruction"]))
-        p = Path(vectors_or_docs_path)
         base = _get_safe_base()
-        if base is not None and not is_within_base(base, p):
+        # Validate vectors path (allows system temp when base is None)
+        vp = canonicalize_and_validate(vectors_or_docs_path, base)
+        if vp is None:
             # Disallow reading outside of base; build an empty index and avoid writing outside base
             X = self._np.zeros((0, int(kwargs.get("dim", 32))), dtype=self._np.float32)
             ids: List[str] = []
             self._ids = ids
             self._index = None
-            outp = Path(out_dir)
-            if base is not None and not is_within_base(base, outp):
+            outp = canonicalize_and_validate(out_dir, base)
+            if outp is None:
                 index_hash = _hash_stub()
                 return BuildReceipt(
                     backend_id="hnswlib",
@@ -50,11 +59,11 @@ class _HnswlibBackend:
                 index_hash=index_hash,
                 training_hash=None,
             )
-        if (base is None and p.is_file() and p.suffix == ".npy") or (base is not None and is_within_base(base, p) and p.is_file() and p.suffix == ".npy"):
-            X = self._np.load(p).astype(self._np.float32)
-        elif (base is None and p.is_dir() and (p/"router/centroids.f32").exists()) or (base is not None and is_within_base(base, p) and p.is_dir() and (p/"router/centroids.f32").exists()):
+        if vp.is_file() and vp.suffix == ".npy":
+            X = self._np.load(vp).astype(self._np.float32)
+        elif vp.is_dir() and (vp/"router/centroids.f32").exists():
             D = int(kwargs.get("dim", 32))
-            raw = self._np.fromfile(p/"router/centroids.f32", dtype=self._np.float32)
+            raw = self._np.fromfile(vp/"router/centroids.f32", dtype=self._np.float32)
             N = raw.size // max(1, D)
             X = raw.reshape(N, D)
         else:
@@ -67,8 +76,8 @@ class _HnswlibBackend:
             idx.add_items(X, ids=list(range(X.shape[0])))
         self._ids = ids
         self._index = idx
-        outp = Path(out_dir)
-        if base is not None and not is_within_base(base, outp):
+        outp = canonicalize_and_validate(out_dir, base)
+        if outp is None:
             index_hash = _hash_stub()
             return BuildReceipt(
                 backend_id="hnswlib",

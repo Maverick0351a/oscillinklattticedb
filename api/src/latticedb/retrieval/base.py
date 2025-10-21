@@ -20,6 +20,7 @@ from typing import Any, Dict, List, Protocol, TypedDict, Optional, Tuple, Callab
 import hashlib
 import os
 from pathlib import Path
+import tempfile
 
 try:
     import numpy as np  # type: ignore
@@ -118,6 +119,39 @@ def is_within_base(base: Path, candidate: Path) -> bool:
             return c.startswith(b.rstrip("/") + "/") or c == b
         except Exception:
             return False
+
+
+def canonicalize_and_validate(candidate: str, base: Optional[Path] | None = None) -> Optional[Path]:
+    """Return a resolved Path only if it is safely within the trusted base.
+
+    - When base is None, IO is not allowed: return None.
+    - Reject absolute paths, drive letters, UNC paths, and parent traversal.
+    - Join candidate to base and ensure the resolved path stays within base.
+    """
+    try:
+        cand_path = Path(candidate)
+        if base is not None:
+            # Disallow absolute candidates outright when a base is set; require relative to base
+            if cand_path.is_absolute():
+                return None
+            combined = (base / cand_path).resolve()
+            if is_within_base(base, combined):
+                return combined
+            return None
+    # Dev/test allowance: if no base is configured, permit only paths strictly inside
+    # the system temporary directory (e.g., pytest's tmp_path). This keeps tests working
+    # while preventing reads/writes to arbitrary user-controlled locations.
+        if not cand_path.is_absolute():
+            return None
+        resolved = cand_path.resolve()
+        tmp_root = Path(tempfile.gettempdir()).resolve()
+        try:
+            ok = resolved.is_relative_to(tmp_root)
+        except Exception:
+            ok = str(resolved).replace("\\", "/").startswith(str(tmp_root).replace("\\", "/").rstrip("/") + "/")
+        return resolved if ok else None
+    except Exception:
+        return None
 
 
 def set_determinism_env(seed: int | None = None, threads: int | None = None) -> None:

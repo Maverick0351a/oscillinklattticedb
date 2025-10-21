@@ -7,9 +7,17 @@ introducing heavy dependencies unless the user opts in.
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
-from pathlib import Path
+from pathlib import Path  # noqa: F401  # kept for type hints in comments if needed
 
-from .base import RetrievalBackend, Candidate, BuildReceipt, set_determinism_env, dir_tree_sha256, _get_safe_base, is_within_base
+from .base import (
+    RetrievalBackend,
+    Candidate,
+    BuildReceipt,
+    set_determinism_env,
+    dir_tree_sha256,
+    _get_safe_base,
+    canonicalize_and_validate,
+)
 
 
 class _NumpyFlatBackend:
@@ -22,17 +30,16 @@ class _NumpyFlatBackend:
 
     def build(self, vectors_or_docs_path: str, out_dir: str, **kwargs: Any) -> BuildReceipt:
         set_determinism_env(kwargs.get("random_seed"), kwargs.get("threads"))
-        p = Path(vectors_or_docs_path)
         base = _get_safe_base()
-        # If a base is configured, restrict IO strictly to within base
-        if base is not None and not is_within_base(base, p):
+        # Validate vectors/docs path against base (or temp-only allowance when base is None)
+        vp = canonicalize_and_validate(vectors_or_docs_path, base)
+        if vp is None:
             # Disallow access; build an empty index deterministically
             X = self._np.zeros((0, int(kwargs.get("dim", 32))), dtype=self._np.float32)
             self._X = X
             self._ids = []
-            outp = Path(out_dir)
-            if base is not None and not is_within_base(base, outp):
-                # If output is outside base, do not write to filesystem
+            outp = canonicalize_and_validate(out_dir, base) if out_dir else None
+            if outp is None:
                 index_hash = _hash_stub()
                 return BuildReceipt(
                     backend_id="faiss:flat",
@@ -50,19 +57,13 @@ class _NumpyFlatBackend:
                 index_hash=index_hash,
                 training_hash=None,
             )
+        # With a validated path, only allow reading specific filenames/locations
         X = None
         ids: List[str] = []
-        # Try a few common locations for centroids used by the router
-        if (
-            (base is None and p.is_file() and p.suffix == ".npy")
-            or (base is not None and is_within_base(base, p) and p.is_file() and p.suffix == ".npy")
-        ):
-            X = self._np.load(p)
-        elif (
-            (base is None and p.is_dir() and (p/"router/centroids.f32").exists())
-            or (base is not None and is_within_base(base, p) and p.is_dir() and (p/"router/centroids.f32").exists())
-        ):
-            raw = self._np.fromfile(p/"router/centroids.f32", dtype=self._np.float32)
+        if vp is not None and vp.suffix == ".npy" and vp.is_file():
+            X = self._np.load(vp)
+        elif vp is not None and vp.is_dir() and (vp/"router/centroids.f32").exists():
+            raw = self._np.fromfile(vp/"router/centroids.f32", dtype=self._np.float32)
             # Best effort: guess dim
             D = int(kwargs.get("dim", 32))
             N = raw.size // max(1, D)
@@ -72,8 +73,8 @@ class _NumpyFlatBackend:
             X = self._np.zeros((0, int(kwargs.get("dim", 32))), dtype=self._np.float32)
         self._X = X.astype(self._np.float32)
         self._ids = ids or [f"L-{i+1:06d}" for i in range(self._X.shape[0])]
-        outp = Path(out_dir)
-        if base is not None and not is_within_base(base, outp):
+        outp = canonicalize_and_validate(out_dir, base)
+        if outp is None:
             # Do not write outside of base
             index_hash = _hash_stub()
             return BuildReceipt(
