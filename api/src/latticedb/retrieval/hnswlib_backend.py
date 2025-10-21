@@ -50,9 +50,9 @@ class _HnswlibBackend:
                 index_hash=index_hash,
                 training_hash=None,
             )
-        if p.is_file() and p.suffix == ".npy":
+        if (base is None and p.is_file() and p.suffix == ".npy") or (base is not None and is_within_base(base, p) and p.is_file() and p.suffix == ".npy"):
             X = self._np.load(p).astype(self._np.float32)
-        elif p.is_dir() and (p/"router/centroids.f32").exists():
+        elif (base is None and p.is_dir() and (p/"router/centroids.f32").exists()) or (base is not None and is_within_base(base, p) and p.is_dir() and (p/"router/centroids.f32").exists()):
             D = int(kwargs.get("dim", 32))
             raw = self._np.fromfile(p/"router/centroids.f32", dtype=self._np.float32)
             N = raw.size // max(1, D)
