@@ -1,5 +1,9 @@
 # Oscillink LatticeDB — Local‑First, Verifiable RAG Database
 
+<p align="center">
+  <img src="docs/assets/oscillink-logo.png" alt="Oscillink logo" width="240" />
+</p>
+
 Self‑building, offline RAG you can trust. LatticeDB ingests your documents locally, builds a scalable, semantically sound geometric database, and answers with deterministic receipts and a DB Merkle root so you can verify exactly how every result was produced — no cloud, no third‑party vector DB.
 
 <p align="left">
@@ -148,6 +152,35 @@ Tip: To label a lattice with a friendly name, call:
 Invoke-RestMethod -Method Put -Uri "http://127.0.0.1:8080/v1/latticedb/lattice/<LATTICE_ID>/metadata" -ContentType 'application/json' -Body (@{ db_path = "./latticedb"; display_name = "My Contract" } | ConvertTo-Json)
 ```
 Then reload the manifest in the UI; you can also sort by display_name (and choose asc/desc) via the UI or API.
+
+## Safe base path (recommended)
+
+For filesystem safety and clear receipts, set a trusted base directory for the on-disk database and any retrieval indexes.
+
+- Set LATTICEDB_DB_ROOT to your database root directory (e.g., the latticedb folder you build to)
+- When set, retrieval adapters and hashing utilities only read/write inside this base; outside paths are rejected and adapters fall back to deterministic stub behavior
+- In dev/test, if LATTICEDB_DB_ROOT is not set, reads may be allowed for tests, but writes outside a base are still blocked; in CI and production, always set it
+
+Examples
+
+- Windows PowerShell
+
+```powershell
+$env:LATTICEDB_DB_ROOT = (Resolve-Path "latticedb").Path
+```
+
+- Bash (macOS/Linux)
+
+```bash
+export LATTICEDB_DB_ROOT="$(pwd)/latticedb"
+```
+
+Notes
+
+- The API no longer reads user-controlled per-DB config files; it uses configured settings. The base path only constrains IO for safety and determinism.
+- Optional retrieval adapters remain off by default. To enable one locally after setting the base, install the extra and pick a backend:
+  - PowerShell: `Set-Location "api"; pip install -e .[retrieval]`; then `$env:LATTICEDB_RETRIEVAL_BACKEND = "faiss:flat"`
+  - For bit-stable demos, set `OSC_DETERMINISTIC=1` or `LATTICEDB_DETERMINISTIC=1`.
 
 ## Operations: security, limits, observability
 

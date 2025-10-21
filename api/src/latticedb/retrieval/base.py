@@ -76,9 +76,9 @@ def dir_tree_sha256(root: Path) -> str:
     if not root.exists():
         return _sha256_bytes(b"empty")
     files: List[Path] = []
-    for base, _dirs, names in os.walk(root):
+    for dirpath, _dirs, names in os.walk(root):
         for n in names:
-            files.append(Path(base) / n)
+            files.append(Path(dirpath) / n)
     files.sort(key=lambda p: str(p).replace("\\", "/"))
     h = hashlib.sha256()
     for p in files:
