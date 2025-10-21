@@ -77,14 +77,8 @@ def api_route(req: RouteReq):
     device = req.embed_device or settings.embed_device
     bsz = int(req.embed_batch_size or settings.embed_batch_size)
     strict = bool(req.embed_strict_hash if req.embed_strict_hash is not None else settings.embed_strict_hash)
-    try:
-        root = Path(req.db_path) if req.db_path else Path(settings.db_root)
-        cfgp = root/"receipts"/"config.json"
-        if cfgp.exists():
-            cfg = json.loads(cfgp.read_text())
-            model_id = str(cfg.get("embed_model", model_id))
-    except Exception:
-        pass
+    # Resolve DB root without reading user-controlled config files
+    root = Path(req.db_path) if req.db_path else Path(settings.db_root)
     be = load_model(model_id, device=device, batch_size=bsz, strict_hash=strict)
     v = be.embed_queries([req.q])[0]
     # Resolve Router via app.main to allow tests to monkeypatch m.Router
@@ -103,16 +97,8 @@ def api_route(req: RouteReq):
             bid, inst, _params = resolve_backend(retrieval_backend)
             # Build lightweight index over centroids if needed (backends read root/router/centroids.f32)
             idx_dir = (root / "router" / "retrieval_index" / bid.replace(":", "_"))
-            # Try to provide dim for backends that guess reshaping
-            embed_dim = settings.spd_dim
-            try:
-                cfgp = root / "receipts" / "config.json"
-                if cfgp.exists():
-                    cfgj = json.loads(cfgp.read_text())
-                    embed_dim = int(cfgj.get("embed_dim", embed_dim))
-            except Exception:
-                pass
-            _ = inst.build(str(root), str(idx_dir), dim=int(embed_dim))
+            # Provide embedding dimension from settings to avoid reading user-controlled files
+            _ = inst.build(str(root), str(idx_dir), dim=int(settings.spd_dim))
             kres = max(1, int(req.k_lattices))
             res = inst.query(v, k=kres)
             # Map adapter candidates directly to API shape
@@ -148,14 +134,11 @@ def api_compose(req: ComposeReq, _auth=auth_guard()):
     max_iter = req.max_iter or settings.spd_max_iter
     dH, iters, resid, ehash = composite_settle(cents, sel_idx, k=k, lambda_G=lamG, lambda_C=lamC, lambda_Q=lamQ, tol=tol, max_iter=max_iter)
 
+    # Build preset metadata using configured embedding settings without reading user-controlled files
+    q_meta = {}
     try:
-        cfgp = root/"receipts"/"config.json"
-        q_meta = {}
-        if cfgp.exists():
-            cfg = json.loads(cfgp.read_text())
-            model_id = str(cfg.get("embed_model", settings.embed_model))
-            be = load_model(model_id, device=settings.embed_device, batch_size=int(settings.embed_batch_size), strict_hash=bool(settings.embed_strict_hash))
-            q_meta = preset_meta(be)
+        be = load_model(settings.embed_model, device=settings.embed_device, batch_size=int(settings.embed_batch_size), strict_hash=bool(settings.embed_strict_hash))
+        q_meta = preset_meta(be)
     except Exception:
         q_meta = {}
 
