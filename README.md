@@ -1,7 +1,14 @@
 # Oscillink LatticeDB — Local‑First, Verifiable RAG Database
 
 <p align="center">
-  <img src="docs/assets/oscillink-logo.png" alt="Oscillink logo" width="240" />
+  <picture>
+    <!-- Prefer vector when available -->
+    <source type="image/svg+xml" srcset="docs/assets/oscillink-logo.svg">
+    <!-- Dark mode variant -->
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/oscillink-logo-dark.png">
+    <!-- Fallback PNG -->
+    <img src="docs/assets/oscillink-logo.png" alt="Oscillink logo" width="240" />
+  </picture>
 </p>
 
 Self‑building, offline RAG you can trust. LatticeDB ingests your documents locally, builds a scalable, semantically sound geometric database, and answers with deterministic receipts and a DB Merkle root so you can verify exactly how every result was produced — no cloud, no third‑party vector DB.
