@@ -48,3 +48,25 @@ embeddings = [
 [tool.pytest.ini_options]
 addopts = "-q"
 testpaths = ["tests"]
+
+# Unified coverage configuration to align local runs and CI tasks
+[tool.coverage.run]
+branch = true
+source = ["app", "latticedb"]
+
+[tool.coverage.report]
+fail_under = 95
+show_missing = true
+skip_covered = false
+precision = 1
+omit = [
+  "tests/*",
+  "scripts/*",
+  "bench/*",
+  "_cov_annot/*",
+  "coverage_html/*",
+  "**/__init__.py"
+]
+
+[tool.coverage.html]
+directory = "coverage_html"

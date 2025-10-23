@@ -309,6 +309,12 @@ xdg-open coverage_html/index.html  # Linux
 
 In CI, we enforce `coverage report --fail-under=95` and upload the HTML report as an artifact for inspection.
 
+Scope and consistency:
+
+- By default, the coverage gate counts only the API modules under `api/app/**` (see `api/.coveragerc`).
+- If you run pytest with `--cov=latticedb --cov=app`, your local XML/HTML may show different totals because it includes `src/latticedb/**` as well.
+- To include engine modules in the gate, update `api/.coveragerc` (or align `--cov` flags in tasks/CI) and ensure the threshold still passes.
+
 Tip: After you’ve generated the report once, you can run the VS Code task “Open: API Coverage Report” to quickly reopen `api/coverage_html/index.html` without rerunning tests.
 
 UI coverage scope: The UI job reports coverage for UI source code only (unit tests via Vitest + jsdom). It does not imply runtime coverage of API features, bench scripts, or the ingestion pipeline. For full-stack validation, see the E2E job which runs Playwright against a live API and uploads an HTML report and traces as artifacts.
