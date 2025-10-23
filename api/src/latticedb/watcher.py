@@ -11,7 +11,10 @@ from .shards import write_shards_yaml, apply_backend_promotions
 from .router import Router
 from .composite import composite_settle
 from .receipts import CompositeReceipt, ShardReceipt
+from .utils import atomic_write_text, apply_determinism_if_enabled
 from .index_faiss import build_faiss_index_for_shard
+from .index_hnswlib import build_hnsw_index_for_shard
+from .index_bm25 import build_bm25_index_for_shard
 
 
 def single_scan(
@@ -24,6 +27,8 @@ def single_scan(
     embed_strict_hash: bool = False,
     firm_path: Path | None = None,
 ) -> dict[str, Any]:
+    # Determinism (opt-in)
+    deterministic = apply_determinism_if_enabled()
     # 1) Write/update shards.yaml (by top-level folder)
     shards_yaml = db_root / "receipts" / "shards.yaml"
     shards_state = write_shards_yaml(input_root, shards_yaml)
@@ -61,6 +66,28 @@ def single_scan(
 
     # 3) Recompute composite over all centroids (always-on)
     C, ids = Router(db_root).load_centroids()
+    # Ensure router receipt exists when centroids are present
+    try:
+        router_dir = db_root / "router"
+        cent_path = router_dir / "centroids.f32"
+        rcp_path = router_dir / "receipt.json"
+        if C.size > 0 and cent_path.exists() and not rcp_path.exists():
+            import hashlib as _hashlib
+            cent_sha = _hashlib.sha256(cent_path.read_bytes()).hexdigest()
+            router_receipt = {
+                "version": "1",
+                "centroid_sha256": cent_sha,
+                "L": int(C.shape[0]),
+                "D": int(C.shape[1]),
+                "build": {"source": "watcher.single_scan"},
+            }
+            # Canonical state_sig (exclude state_sig itself)
+            from .utils import state_sig as _state_sig
+            rsig = _state_sig({k: v for k, v in router_receipt.items() if k != "state_sig"})
+            router_receipt["state_sig"] = rsig
+            atomic_write_text(rcp_path, json.dumps(router_receipt, indent=2))
+    except Exception:
+        pass
     sel = list(range(len(ids)))
     # Load SPD params from config.json if present
     k = 4
@@ -141,13 +168,70 @@ def single_scan(
         sealed = None
         index_meta = None
         index_sha = None
-        # If backend is faiss, make sure a sealed index exists
+        index_build_receipt = None
+        # Build appropriate index based on active backend
         if s.active_backend == "faiss":
             try:
                 res = build_faiss_index_for_shard(db_root, s.id)
                 sealed = True
                 index_meta = {"dim": res.dim, "nvec": res.nvec, "type": "flat_l2"}
                 index_sha = res.index_sha256
+                # Write index receipt alongside sealed artifacts
+                try:
+                    # Optional training provenance: if a training file exists, compute its sha256
+                    tr_hash = None
+                    sealed_dir = res.meta_path.parent
+                    for cand in ("train.npy", "train.f32"):
+                        p = sealed_dir / cand
+                        if p.exists():
+                            tr_hash = hashlib.sha256(p.read_bytes()).hexdigest()
+                            break
+                    idx_receipt = {
+                        "version": 1,
+                        "backend_id": "faiss_flat_l2",
+                        "params": {"type": "flat_l2", "dim": res.dim},
+                        "index_hash": res.index_sha256,
+                        "training_hash": tr_hash,
+                        "shard_id": s.id,
+                    }
+                    atomic_write_text(sealed_dir / "index_receipt.json", json.dumps(idx_receipt, indent=2))
+                except Exception:
+                    pass
+                # Load back the receipt for inclusion in shard receipt (provenance)
+                try:
+                    irp = res.meta_path.parent / "index_receipt.json"
+                    if irp.exists():
+                        index_build_receipt = json.loads(irp.read_text(encoding="utf-8"))
+                    else:
+                        index_build_receipt = None
+                except Exception:
+                    index_build_receipt = None
+            except Exception:
+                sealed = False
+        elif s.active_backend == "hnswlib":
+            try:
+                res = build_hnsw_index_for_shard(db_root, s.id)
+                sealed = True
+                index_meta = {"dim": res.dim, "nvec": res.nvec, "type": "hnsw_cosine"}
+                index_sha = res.index_sha256
+                try:
+                    irp = res.meta_path.parent / "index_receipt.json"
+                    index_build_receipt = json.loads(irp.read_text(encoding="utf-8")) if irp.exists() else None
+                except Exception:
+                    index_build_receipt = None
+            except Exception:
+                sealed = False
+        elif s.active_backend.startswith("bm25"):
+            try:
+                res = build_bm25_index_for_shard(db_root, s.id)
+                sealed = True
+                index_meta = {"dim": 0, "nvec": res.nvec, "type": "bm25:tantivy"}
+                index_sha = res.index_sha256
+                try:
+                    irp = res.meta_path.parent / "index_receipt.json"
+                    index_build_receipt = json.loads(irp.read_text(encoding="utf-8")) if irp.exists() else None
+                except Exception:
+                    index_build_receipt = None
             except Exception:
                 sealed = False
         sr = ShardReceipt.build(
@@ -160,6 +244,7 @@ def single_scan(
             sealed=sealed,
             index_meta=index_meta,
             index_sha256=index_sha,
+            retrieval_build_receipt=index_build_receipt if sealed else None,
         )
         shard_receipts.append(sr)
         (shards_dir / f"{s.id}.receipt.json").write_text(sr.model_dump_json(indent=2))
@@ -176,17 +261,32 @@ def single_scan(
         epsilon=1e-3,
         tau=0.30,
         filters={},
+        deterministic=bool(deterministic),
     )
-    # Recompute DB root over composite + shards + config
-    leaves_with_comp = [comp.state_sig, *[sr.state_sig for sr in shard_receipts], config_hash]
+    # Recompute DB root over composite + shards + router + config
+    router_receipt_path = db_root/"router"/"receipt.json"
+    router_sig = None
+    if router_receipt_path.exists():
+        try:
+            rj = json.loads(router_receipt_path.read_text(encoding="utf-8"))
+            router_sig = rj.get("state_sig")
+        except Exception:
+            router_sig = None
+    leaves_with_comp = [comp.state_sig, *[sr.state_sig for sr in shard_receipts]]
+    if router_sig:
+        leaves_with_comp.append(router_sig)
+    leaves_with_comp.append(config_hash)
     root = merkle_root(leaves_with_comp)
     # Update comp.db_root to the newly computed root
     comp.db_root = root
     (db_root / "receipts").mkdir(parents=True, exist_ok=True)
-    (db_root / "receipts" / "composite.receipt.json").write_text(comp.model_dump_json(indent=2))
-    (db_root / "receipts" / "db_receipt.json").write_text(
-        json.dumps({"version": "1", "db_root": root, "config_hash": config_hash, "leaves": leaves_with_comp}, indent=2)
-    )
+    atomic_write_text(db_root / "receipts" / "composite.receipt.json", comp.model_dump_json(indent=2))
+    atomic_write_text(db_root / "receipts" / "db_receipt.json", json.dumps({"version": "1", "db_root": root, "config_hash": config_hash, "leaves": leaves_with_comp}, indent=2))
+    # Ensure SCHEMA_VERSION exists
+    try:
+        atomic_write_text(db_root/"SCHEMA_VERSION", "1\n")
+    except Exception:
+        pass
     return {"count": len(receipts), "db_root": root, "composite": comp.model_dump()}
 
 

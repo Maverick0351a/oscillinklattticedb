@@ -2,6 +2,7 @@ import hashlib
 import json
 import os
 import random
+import warnings
 from typing import Any, Iterable, List, Dict
 from pathlib import Path
 import tempfile
@@ -18,9 +19,52 @@ def canonical_json(obj: Any) -> str:
 def state_sig(obj: Any) -> str:
     return hashlib.sha256(canonical_json(obj).encode("utf-8")).hexdigest()
 
-def set_determinism():
-    random.seed(RANDOM_SEED)
-    os.environ.setdefault("PYTHONHASHSEED", "0")
+def set_determinism(seed: int | None = None) -> None:
+    """Best-effort determinism: seeds RNGs and limits threads if possible.
+
+    This is safe to call multiple times.
+    """
+    s = int(seed if seed is not None else RANDOM_SEED)
+    random.seed(s)
+    os.environ.setdefault("PYTHONHASHSEED", str(s))
+    # NumPy
+    try:
+        import numpy as _np  # type: ignore
+        _np.random.seed(s)
+    except Exception:
+        pass
+    # Torch (optional)
+    try:
+        import torch as _torch  # type: ignore
+        _torch.manual_seed(s)
+        if _torch.cuda.is_available():
+            _torch.cuda.manual_seed_all(s)
+        try:
+            _torch.use_deterministic_algorithms(True, warn_only=True)  # type: ignore[attr-defined]
+        except Exception:
+            pass
+    except Exception:
+        pass
+    # Threading caps (won't override if user set)
+    os.environ.setdefault("OMP_NUM_THREADS", "1")
+    os.environ.setdefault("MKL_NUM_THREADS", "1")
+    os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
+
+
+def apply_determinism_if_enabled() -> bool:
+    """Enable determinism when OSC_DETERMINISTIC or LATTICEDB_DETERMINISTIC is truthy.
+
+    Returns True if determinism was enabled.
+    """
+    flag = str(os.environ.get("OSC_DETERMINISTIC") or os.environ.get("LATTICEDB_DETERMINISTIC") or "").lower()
+    if flag in ("1", "true", "yes", "on"):  # enable
+        try:
+            set_determinism()
+            return True
+        except Exception as e:  # pragma: no cover - best-effort
+            warnings.warn(f"determinism request failed: {e}")
+            return False
+    return False
 
 
 def atomic_write_bytes(path: Path, data: bytes) -> None:

@@ -4,6 +4,7 @@ SPDX-License-Identifier: BUSL-1.1
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
+import json
 from pathlib import Path  # noqa: F401
 
 from .base import (
@@ -15,6 +16,7 @@ from .base import (
     _get_safe_base,
     canonicalize_and_validate,
 )
+from ..utils import atomic_write_text  # type: ignore
 
 
 class _HnswlibBackend:
@@ -60,7 +62,15 @@ class _HnswlibBackend:
                 training_hash=None,
             )
         if vp.is_file() and vp.suffix == ".npy":
-            X = self._np.load(vp).astype(self._np.float32)
+            X = self._np.load(vp, mmap_mode="r").astype(self._np.float32)
+        elif vp.is_dir() and (vp/"router/centroids.npy").exists():
+            try:
+                X = self._np.load(vp/"router/centroids.npy", mmap_mode="r").astype(self._np.float32)
+            except Exception:
+                D = int(kwargs.get("dim", 32))
+                raw = self._np.fromfile(vp/"router/centroids.f32", dtype=self._np.float32)
+                N = raw.size // max(1, D)
+                X = raw.reshape(N, D)
         elif vp.is_dir() and (vp/"router/centroids.f32").exists():
             D = int(kwargs.get("dim", 32))
             raw = self._np.fromfile(vp/"router/centroids.f32", dtype=self._np.float32)
@@ -79,24 +89,38 @@ class _HnswlibBackend:
         outp = canonicalize_and_validate(out_dir, base)
         if outp is None:
             index_hash = _hash_stub()
-            return BuildReceipt(
+            br = BuildReceipt(
                 backend_id="hnswlib",
                 backend_version="hnswlib",
                 params={"M": M, "efConstruction": efC, "efSearch": int(kwargs.get("efSearch", 64))},
                 index_hash=index_hash,
                 training_hash=None,
             )
+            return br
         outp.mkdir(parents=True, exist_ok=True)
         # Persist index for hashing
         (outp/"hnsw_index.bin").write_bytes(idx.get_current_count().to_bytes(8, 'little'))
         index_hash = dir_tree_sha256(outp)
-        return BuildReceipt(
+        br = BuildReceipt(
             backend_id="hnswlib",
             backend_version="hnswlib",
             params={"M": M, "efConstruction": efC, "efSearch": int(kwargs.get("efSearch", 64))},
             index_hash=index_hash,
             training_hash=None,
         )
+        # Emit index_receipt.json
+        try:
+            atomic_write_text(outp/"index_receipt.json", json.dumps({
+                "version": 1,
+                "backend_id": br["backend_id"],
+                "backend_version": br["backend_version"],
+                "params": br["params"],
+                "index_hash": br["index_hash"],
+                "training_hash": br["training_hash"],
+            }, indent=2))
+        except Exception:
+            pass
+        return br
 
     def query(self, qvec, k: int, filters: Optional[Dict[str, Any]] = None) -> List[Candidate]:  # noqa: ANN001
         if self._index is None:

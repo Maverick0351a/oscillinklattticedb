@@ -35,9 +35,25 @@ Fields (subset):
 - deltaH_total, cg_iters, final_residual
 - epsilon, tau (gating thresholds)
 - filters: optional selection filters applied
+	- with ACL enabled, this captures `tenant` and comma-joined `roles` used to filter candidates (for audit).
 - model_sha256, state_sig (computed as above)
  - retrieval_backend (optional): backend id like "faiss:flat", "hnswlib", "bm25:tantivy", or "hybrid"
  - retrieval_params (optional): params used (e.g., weights for hybrid)
+
+## IndexReceipt (per shard index)
+
+Stored at `indexes/<shard_id>/sealed/index_receipt.json` and emitted by each retrieval adapter when an index is sealed. Minimal fields:
+
+- version: 1
+- backend_id: adapter id (e.g., "faiss_flat_l2", "hnswlib", "bm25:tantivy")
+- backend_version: adapter/lib version (if available)
+- params: dict of index parameters (e.g., `{type: flat_l2, dim: 32}` or `{M: 32, efConstruction: 200}`)
+- index_hash: sha256 over the sealed index directory contents (paths sorted)
+- training_hash: optional sha256 of training data (None for flat indexes)
+- shard_id: the shard the index belongs to (when emitted by the watcher)
+
+Operational API:
+- GET `/v1/index/receipt/{shard_id}` → returns the receipt JSON for auditing.
 
 ## Verification flow
 1. Recompute sha256 over CompositeReceipt normalized JSON → compare to state_sig.

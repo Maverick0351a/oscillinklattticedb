@@ -32,6 +32,9 @@ class RouteReq(BaseModel):
     embed_device: str | None = None
     embed_batch_size: int | None = None
     embed_strict_hash: bool | None = None
+    # Optional ACL filters
+    tenant: str | None = None
+    roles: list[str] | None = None
 
 
 class ComposeReq(BaseModel):
@@ -47,6 +50,9 @@ class ComposeReq(BaseModel):
     lambda_Q: float | None = None
     tol: float | None = None
     max_iter: int | None = None
+    # Optional ACL filters
+    tenant: str | None = None
+    roles: list[str] | None = None
 
 
 class VerifyReq(BaseModel):

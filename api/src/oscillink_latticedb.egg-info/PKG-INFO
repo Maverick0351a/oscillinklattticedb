@@ -30,6 +30,10 @@ Requires-Dist: pdfminer.six==20231228; extra == "dev"
 Requires-Dist: python-docx==1.1.2; extra == "dev"
 Requires-Dist: faiss-cpu>=1.7.4; extra == "dev"
 Requires-Dist: psutil>=5.9.0; extra == "dev"
+Provides-Extra: retrieval
+Requires-Dist: faiss-cpu>=1.7.4; extra == "retrieval"
+Requires-Dist: hnswlib>=0.8.0; extra == "retrieval"
+Requires-Dist: tantivy>=0.20.0; extra == "retrieval"
 Provides-Extra: embeddings
 Requires-Dist: transformers==4.44.2; extra == "embeddings"
 Requires-Dist: torch>=2.0.0; extra == "embeddings"

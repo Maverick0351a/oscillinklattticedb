@@ -23,6 +23,7 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--out", default="_bench/memory_rss.json")
     p.add_argument("--sleep", type=float, default=0.5, help="optional dwell to stabilize measurement")
+    p.add_argument("--label", default=None, help="optional label to include in the output (e.g., baseline, warmed)")
     args = p.parse_args()
 
     # Optional lightweight workload placeholder (noop)
@@ -34,6 +35,8 @@ def main():
         "rss_mb": get_rss_mb(),
         "note": "If rss_mb is null, install psutil in dev extras to enable measurement.",
     }
+    if args.label:
+        payload["label"] = str(args.label)
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)
     Path(args.out).write_text(json.dumps(payload, indent=2))
     print(json.dumps(payload, indent=2))

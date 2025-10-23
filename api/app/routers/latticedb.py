@@ -6,15 +6,20 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+import logging
 from fastapi import APIRouter, HTTPException
+from fastapi import Request
 
 from ..core.config import settings
 from ..auth.jwt import auth_guard
 from ..schemas import IngestReq, RouteReq, ComposeReq, VerifyReq, ChatReq, ScanReq
 from ..core.metrics import SPD_DELTAH_LAST, SPD_RESIDUAL_LAST
+from ..core.metrics import route_latency, compose_latency
+from ..core.metrics import ACL_FILTERED_CANDIDATES, ACL_ABSTAIN
 from latticedb.ingest import ingest_dir
 from latticedb.router import Router as _Router
 from latticedb.receipts import CompositeReceipt
+from latticedb.acl import is_lattice_allowed
 from latticedb.verify import verify_composite
 from latticedb.watcher import single_scan as watcher_single_scan
 
@@ -71,7 +76,99 @@ def api_ingest(req: IngestReq, _auth=auth_guard()):
 
 
 @router.post("/v1/latticedb/route", summary="Route query to candidate lattices")
-def api_route(req: RouteReq):
+def api_route(req: RouteReq, request: Request = None):  # type: ignore[assignment]
+    with route_latency.time():
+        from latticedb.embeddings import load_model
+        model_id = req.embed_model or settings.embed_model
+        device = req.embed_device or settings.embed_device
+        bsz = int(req.embed_batch_size or settings.embed_batch_size)
+        strict = bool(req.embed_strict_hash if req.embed_strict_hash is not None else settings.embed_strict_hash)
+        # Resolve DB root without reading user-controlled config files
+        root = Path(req.db_path) if req.db_path else Path(settings.db_root)
+        be = load_model(model_id, device=device, batch_size=bsz, strict_hash=strict)
+        v = be.embed_queries([req.q])[0]
+        # Resolve Router via app.main to allow tests to monkeypatch m.Router
+        try:
+            from .. import main as m  # type: ignore
+            _R = getattr(m, "Router", _Router)
+        except Exception:
+            _R = _Router
+        # Optional retrieval adapter (experimental): when configured, prefer adapter ranking over Router
+        retrieval_backend = settings.retrieval_backend.strip()
+        candidates: list[dict] | None = None
+        if retrieval_backend:
+            try:
+                from latticedb.retrieval.base import resolve_backend, set_determinism_env  # type: ignore
+                if settings.deterministic_mode:
+                    set_determinism_env(seed=0, threads=1)
+                bid, inst, _params = resolve_backend(retrieval_backend)
+                # Build lightweight index over centroids if needed (backends read root/router/centroids.f32)
+                idx_dir = (root / "router" / "retrieval_index" / bid.replace(":", "_"))
+                # Provide embedding dimension from settings to avoid reading user-controlled files
+                _ = inst.build(str(root), str(idx_dir), dim=int(settings.spd_dim))
+                kres = max(1, int(req.k_lattices))
+                res = inst.query(v, k=kres)
+                # Map adapter candidates directly to API shape
+                candidates = [{"lattice_id": str(c["id"]), "score": float(c["score"]) } for c in res]
+            except Exception:
+                # Safe fallback to deterministic Router behavior
+                candidates = None
+
+        if candidates is None:
+            r = _R(root)
+            cand = r.route(v, k=req.k_lattices)
+            candidates = [{"lattice_id": lid, "score": s} for lid, s in cand]
+
+        # Determine effective ACL from JWT claims when enforcement is on (unless privileged)
+        eff_tenant = req.tenant
+        eff_roles = list(req.roles) if req.roles else None
+        try:
+            if settings.acl_enforce and request is not None:
+                from ..auth.jwt import extract_claims_from_request  # type: ignore
+                claims = extract_claims_from_request(request)
+                if claims:
+                    c_roles = claims.get("roles") or []
+                    c_tenant = claims.get("tenant") or claims.get("org")
+                    privileged = isinstance(c_roles, (list, tuple)) and ("admin" in set(map(str, c_roles)))
+                    if not privileged:
+                        if c_tenant:
+                            eff_tenant = c_tenant
+                        if isinstance(c_roles, (list, tuple)) and len(c_roles) > 0:
+                            eff_roles = list(c_roles)
+        except Exception:
+            pass
+
+        # ACL filtering (best-effort). Enforce when ACL is enabled or filters provided.
+        enforce_acl = bool(settings.acl_enforce or eff_tenant or (eff_roles and len(eff_roles) > 0))
+        # Deny-by-default when enforced but no effective claims and policy enabled
+        if settings.acl_enforce and settings.acl_deny_on_missing_claims and not eff_tenant and not eff_roles:
+            raise HTTPException(status_code=403, detail="missing tenant/roles claims")
+        if enforce_acl:
+            t = eff_tenant
+            rs = list(eff_roles) if eff_roles else None
+            filtered = []
+            before = len(candidates)
+            filtered_ids: list[str] = []
+            for c in candidates:
+                try:
+                    lid = str(c.get("lattice_id"))
+                    if is_lattice_allowed(root, lid, tenant=t, roles=rs):
+                        filtered.append(c)
+                    else:
+                        filtered_ids.append(lid)
+                except Exception:
+                    filtered.append(c)
+            candidates = filtered
+            try:
+                dropped = max(0, before - len(candidates))
+                if dropped:
+                    ACL_FILTERED_CANDIDATES.labels(endpoint="route").inc(dropped)
+                    logging.getLogger("latticedb.acl").info("ACL filtered %d/%d candidates on route", dropped, before)
+                    logging.getLogger("latticedb.acl").debug("Filtered candidate ids (sample): %s", filtered_ids[:5])
+            except Exception:
+                pass
+
+        return {"candidates": candidates}
     from latticedb.embeddings import load_model
     model_id = req.embed_model or settings.embed_model
     device = req.embed_device or settings.embed_device
@@ -89,6 +186,7 @@ def api_route(req: RouteReq):
         _R = _Router
     # Optional retrieval adapter (experimental): when configured, prefer adapter ranking over Router
     retrieval_backend = settings.retrieval_backend.strip()
+    candidates: list[dict] | None = None
     if retrieval_backend:
         try:
             from latticedb.retrieval.base import resolve_backend, set_determinism_env  # type: ignore
@@ -102,30 +200,128 @@ def api_route(req: RouteReq):
             kres = max(1, int(req.k_lattices))
             res = inst.query(v, k=kres)
             # Map adapter candidates directly to API shape
-            return {"candidates": [{"lattice_id": str(c["id"]), "score": float(c["score"])} for c in res]}
+            candidates = [{"lattice_id": str(c["id"]), "score": float(c["score"]) } for c in res]
         except Exception:
             # Safe fallback to deterministic Router behavior
+            candidates = None
+
+    if candidates is None:
+        r = _R(root)
+        cand = r.route(v, k=req.k_lattices)
+        candidates = [{"lattice_id": lid, "score": s} for lid, s in cand]
+
+    # Determine effective ACL from JWT claims when enforcement is on (unless privileged)
+    eff_tenant = req.tenant
+    eff_roles = list(req.roles) if req.roles else None
+    try:
+        if settings.acl_enforce and request is not None:
+            from ..auth.jwt import extract_claims_from_request  # type: ignore
+            claims = extract_claims_from_request(request)
+            if claims:
+                c_roles = claims.get("roles") or []
+                c_tenant = claims.get("tenant") or claims.get("org")
+                privileged = isinstance(c_roles, (list, tuple)) and ("admin" in set(map(str, c_roles)))
+                if not privileged:
+                    if c_tenant:
+                        eff_tenant = c_tenant
+                    if isinstance(c_roles, (list, tuple)) and len(c_roles) > 0:
+                        eff_roles = list(c_roles)
+    except Exception:
+        pass
+
+    # ACL filtering (best-effort). Enforce when ACL is enabled or filters provided.
+    enforce_acl = bool(settings.acl_enforce or eff_tenant or (eff_roles and len(eff_roles) > 0))
+    # Deny-by-default when enforced but no effective claims and policy enabled
+    if settings.acl_enforce and settings.acl_deny_on_missing_claims and not eff_tenant and not eff_roles:
+        raise HTTPException(status_code=403, detail="missing tenant/roles claims")
+    if enforce_acl:
+        t = eff_tenant
+        rs = list(eff_roles) if eff_roles else None
+        filtered = []
+        before = len(candidates)
+        filtered_ids: list[str] = []
+        for c in candidates:
+            try:
+                lid = str(c.get("lattice_id"))
+                if is_lattice_allowed(root, lid, tenant=t, roles=rs):
+                    filtered.append(c)
+                else:
+                    filtered_ids.append(lid)
+            except Exception:
+                filtered.append(c)
+        candidates = filtered
+        try:
+            dropped = max(0, before - len(candidates))
+            if dropped:
+                ACL_FILTERED_CANDIDATES.labels(endpoint="route").inc(dropped)
+                logging.getLogger("latticedb.acl").info("ACL filtered %d/%d candidates on route", dropped, before)
+                logging.getLogger("latticedb.acl").debug("Filtered candidate ids (sample): %s", filtered_ids[:5])
+        except Exception:
             pass
 
-    r = _R(root)
-    cand = r.route(v, k=req.k_lattices)
-    return {"candidates": [{"lattice_id": lid, "score": s} for lid, s in cand]}
+    return {"candidates": candidates}
 
 
 @router.post("/v1/latticedb/compose", summary="Compose selected lattices into a context pack")
-def api_compose(req: ComposeReq, _auth=auth_guard()):
-    from latticedb.router import Router as _RouterLocal
-    from latticedb.composite import composite_settle
-    from latticedb.embeddings import load_model, preset_meta
-    root = Path(req.db_path) if req.db_path else Path(settings.db_root)
-    try:
-        from .. import main as m  # type: ignore
-        _R = getattr(m, "Router", _RouterLocal)
-    except Exception:
-        _R = _RouterLocal
+def api_compose(req: ComposeReq, _auth=auth_guard(), request: Request = None):  # type: ignore[assignment]
+    with compose_latency.time():
+        from latticedb.router import Router as _RouterLocal
+        from latticedb.composite import composite_settle
+        from latticedb.embeddings import load_model, preset_meta
+        root = Path(req.db_path) if req.db_path else Path(settings.db_root)
+        try:
+            from .. import main as m  # type: ignore
+            _R = getattr(m, "Router", _RouterLocal)
+        except Exception:
+            _R = _RouterLocal
     cents, ids = _R(root).load_centroids()
     id_to_idx = {lid:i for i,lid in enumerate(ids)}
-    sel_idx = [id_to_idx[i] for i in req.lattice_ids if i in id_to_idx]
+    # ACL filtering for provided selection (best-effort)
+    eff_tenant = req.tenant
+    eff_roles = list(req.roles) if req.roles else None
+    try:
+        if settings.acl_enforce and request is not None:
+            from ..auth.jwt import extract_claims_from_request  # type: ignore
+            claims = extract_claims_from_request(request)
+            if claims:
+                c_roles = claims.get("roles") or []
+                c_tenant = claims.get("tenant") or claims.get("org")
+                privileged = isinstance(c_roles, (list, tuple)) and ("admin" in set(map(str, c_roles)))
+                if not privileged:
+                    if c_tenant:
+                        eff_tenant = c_tenant
+                    if isinstance(c_roles, (list, tuple)) and len(c_roles) > 0:
+                        eff_roles = list(c_roles)
+    except Exception:
+        pass
+    enforce_acl = bool(settings.acl_enforce or eff_tenant or (eff_roles and len(eff_roles) > 0))
+    # Deny-by-default when enforced but no effective claims and policy enabled
+    if settings.acl_enforce and settings.acl_deny_on_missing_claims and not eff_tenant and not eff_roles:
+        raise HTTPException(status_code=403, detail="missing tenant/roles claims")
+    if enforce_acl:
+        t = eff_tenant
+        rs = list(eff_roles) if eff_roles else None
+        allowed_ids = []
+        filtered_ids: list[str] = []
+        for lid in req.lattice_ids:
+            try:
+                if is_lattice_allowed(root, lid, tenant=t, roles=rs):
+                    allowed_ids.append(lid)
+                else:
+                    filtered_ids.append(lid)
+            except Exception:
+                allowed_ids.append(lid)
+    else:
+        allowed_ids = list(req.lattice_ids)
+    sel_idx = [id_to_idx[i] for i in allowed_ids if i in id_to_idx]
+    if enforce_acl and len(sel_idx) == 0:
+        try:
+            ACL_ABSTAIN.labels(reason="acl_no_candidates").inc()
+            logging.getLogger("latticedb.acl").info("ACL abstain in compose: all candidates filtered")
+            logging.getLogger("latticedb.acl").debug("Filtered ids: %s", filtered_ids[:5] if 'filtered_ids' in locals() else [])
+        except Exception:
+            pass
+        return {"abstain": True, "reason": "acl_no_candidates"}
     k = req.k or settings.spd_k_neighbors
     lamG = req.lambda_G or settings.spd_lambda_G
     lamC = req.lambda_C or settings.spd_lambda_C
@@ -142,6 +338,14 @@ def api_compose(req: ComposeReq, _auth=auth_guard()):
     except Exception:
         q_meta = {}
 
+    # Build filters provenance
+    filters = {}
+    if enforce_acl:
+        if eff_tenant:
+            filters["tenant"] = str(eff_tenant)
+        if eff_roles:
+            filters["roles"] = ",".join([str(r) for r in eff_roles])
+
     comp = CompositeReceipt.build(
         db_root=json.loads((root/'receipts/db_receipt.json').read_text())["db_root"],
         lattice_ids=[ids[i] for i in sel_idx],
@@ -151,7 +355,7 @@ def api_compose(req: ComposeReq, _auth=auth_guard()):
         final_residual=resid,
         epsilon=req.epsilon,
         tau=req.tau,
-        filters={},
+        filters=filters,
         model_sha256=(q_meta.get("weights_sha256") or "stub-model-sha256"),
         embed_model=q_meta.get("embed_model"),
         embed_dim=q_meta.get("embed_dim"),
@@ -169,22 +373,29 @@ def api_compose(req: ComposeReq, _auth=auth_guard()):
         return {"context_pack": {"question": req.q, "working_set": [], "receipts": {"composite": comp.model_dump()} }}
 
     citations = []
-    for lid in comp.lattice_ids:
-        group_dir = next((p for p in (root/"groups").glob("**/"+lid) if p.is_dir()), None)
-        if not group_dir:
-            continue
-        import pandas as pd
-        df = pd.read_parquet(group_dir/"chunks.parquet")
-        if len(df)>0:
-            citations.append({"lattice": lid, "text": str(df.iloc[0]["text"])[:200], "score": 0.8})
+    try:
+        for lid in comp.lattice_ids:
+            group_dir = next((p for p in (root/"groups").glob("**/"+lid) if p.is_dir()), None)
+            if not group_dir:
+                continue
+            import pandas as pd
+            df = pd.read_parquet(group_dir/"chunks.parquet")
+            if len(df)>0:
+                citations.append({"lattice": lid, "text": str(df.iloc[0]["text"])[:200], "score": 0.8})
+    except Exception:
+        citations = []
     return {"context_pack": {"question": req.q, "working_set": citations, "receipts": {"composite": comp.model_dump()} } }
 
 
 @router.post("/v1/latticedb/verify", summary="Verify CompositeReceipt and lattice receipts")
 def api_verify(req: VerifyReq):
     root = Path(req.db_path) if req.db_path else Path(settings.db_root)
-    res = verify_composite(root/"receipts/db_receipt.json", req.composite, req.lattice_receipts)
-    return res
+    try:
+        res = verify_composite(root/"receipts/db_receipt.json", req.composite, req.lattice_receipts)
+        return res
+    except Exception as e:  # noqa: BLE001
+        # Avoid leaking 500s to clients; return structured failure instead
+        return {"verified": False, "reason": f"exception:{type(e).__name__}: {e}"}
 
 
 def _build_prompt(question: str, citations: list[dict]) -> tuple[str, str]:

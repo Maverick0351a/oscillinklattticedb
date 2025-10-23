@@ -1,0 +1,141 @@
+name: Readyz Gates
+
+on:
+  pull_request:
+  push:
+    branches: [ main ]
+
+jobs:
+  summary-readyz:
+    name: Summary Readyz (PR)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install API deps
+        run: |
+          python -m pip install -U pip
+          pip install -e api[dev]
+      - name: Start API (background)
+        working-directory: api
+        env:
+          LATTICEDB_DB_ROOT: ${{ github.workspace }}/latticedb
+        run: |
+          nohup python -m uvicorn app.main:app --host 127.0.0.1 --port 8080 > api.log 2>&1 &
+          for i in {1..30}; do curl -fsS http://127.0.0.1:8080/health && break || sleep 1; done
+      - name: Summary /readyz gate
+        run: |
+          python api/scripts/readyz_report.py --url http://127.0.0.1:8080 --summary
+      - name: Lint and Tests (PR info)
+        run: |
+          ruff --version || pip install ruff
+          (cd api && ruff check .)
+          (cd api && python -m pytest -q)
+      - name: Coverage HTML (PR info)
+        run: |
+          (cd api && coverage run -m pytest || true)
+          (cd api && coverage html || true)
+      - name: Upload coverage html
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-html
+          path: api/coverage_html
+          if-no-files-found: ignore
+      - name: Upload _bench artifacts (if any)
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-json
+          path: _bench/**/*.json
+          if-no-files-found: ignore
+
+  strict-readyz:
+    name: Strict Readyz (main)
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install API deps
+        run: |
+          python -m pip install -U pip
+          pip install -e api[dev]
+      - name: Start API (background)
+        working-directory: api
+        env:
+          LATTICEDB_DB_ROOT: ${{ github.workspace }}/latticedb
+        run: |
+          nohup python -m uvicorn app.main:app --host 127.0.0.1 --port 8080 > api.log 2>&1 &
+          for i in {1..30}; do curl -fsS http://127.0.0.1:8080/health && break || sleep 1; done
+      - name: Strict /readyz gate
+        run: |
+          python api/scripts/readyz_report.py --url http://127.0.0.1:8080 --strict --schema-limit 50
+      - name: Lint and Tests (main)
+        run: |
+          ruff --version || pip install ruff
+          (cd api && ruff check .)
+          (cd api && python -m pytest -q)
+      - name: Coverage HTML (main)
+        run: |
+          (cd api && coverage run -m pytest)
+          (cd api && coverage report)
+          (cd api && coverage html)
+      - name: Upload coverage html
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-html
+          path: api/coverage_html
+      - name: Upload _bench artifacts (if any)
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-json
+          path: _bench/**/*.json
+          if-no-files-found: ignore
+
+  concurrency-bench:
+    name: Concurrency Bench (main)
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install API deps
+        run: |
+          python -m pip install -U pip
+          pip install -e api[dev]
+      - name: Start API with workers and toggles
+        working-directory: api
+        env:
+          LATTICEDB_DB_ROOT: ${{ github.workspace }}/latticedb
+          LATTICEDB_MANIFEST_CACHE: '1'
+          LATTICEDB_MMAP_ENABLED: '1'
+        run: |
+          nohup python -m uvicorn app.main:app --host 127.0.0.1 --port 8080 --workers 4 > api.log 2>&1 &
+          for i in {1..30}; do curl -fsS http://127.0.0.1:8080/health && break || sleep 1; done
+      - name: Run concurrency bench (c=10, runs=50)
+        run: |
+          mkdir -p _bench
+          python api/scripts/bench_concurrency.py --url http://127.0.0.1:8080 --runs 50 --concurrency 10 --q 'What is Oscillink?' --out _bench/concurrency_w4.json || true
+          python - <<'PY'
+          import json, sys
+          try:
+              r=json.load(open('_bench/concurrency_w4.json'))
+              p95=r.get('p95_ms', 999999)
+              print('p95_ms=', p95)
+              sys.exit(0 if p95 < 1800 else 2)
+          except Exception as e:
+              print('bench_parse_error:', e)
+              sys.exit(0)
+          PY
+      - name: Upload bench
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-concurrency
+          path: _bench/concurrency_w4.json
+          if-no-files-found: warn

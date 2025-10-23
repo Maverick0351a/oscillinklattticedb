@@ -93,6 +93,16 @@ class Settings(BaseSettings):
     # Retrieval adapters (optional)
     retrieval_backend: str = os.environ.get("LATTICEDB_RETRIEVAL_BACKEND", "")
     deterministic_mode: bool = bool(int(os.environ.get("OSC_DETERMINISTIC", os.environ.get("LATTICEDB_DETERMINISTIC", "0"))))
+    # ACL enforcement (optional)
+    acl_enforce: bool = bool(int(os.environ.get("LATTICEDB_ACL_ENFORCE", "0")))
+    acl_deny_on_missing_claims: bool = bool(int(os.environ.get("LATTICEDB_ACL_DENY_ON_MISSING_CLAIMS", "0")))
+    # Optional TTL cache for strict /readyz responses (seconds). 0 disables caching.
+    readyz_strict_ttl_seconds: int = int(os.environ.get("LATTICEDB_READYZ_STRICT_TTL_SECONDS", "0"))
+    # Performance toggles
+    manifest_cache: bool = bool(int(os.environ.get("LATTICEDB_MANIFEST_CACHE", "0")))
+    manifest_cache_ttl_seconds: int = int(os.environ.get("LATTICEDB_MANIFEST_CACHE_TTL_SECONDS", "60"))
+    mmap_enabled: bool = bool(int(os.environ.get("LATTICEDB_MMAP_ENABLED", "0")))
+    mmap_lru_cap: int = int(os.environ.get("LATTICEDB_MMAP_LRU_CAP", "8"))
 
 
 settings = Settings()

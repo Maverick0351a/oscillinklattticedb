@@ -31,3 +31,8 @@ transformers==4.44.2
 torch>=2.0.0
 sentencepiece>=0.1.99
 accelerate>=0.33.0
+
+[retrieval]
+faiss-cpu>=1.7.4
+hnswlib>=0.8.0
+tantivy>=0.20.0

@@ -29,6 +29,8 @@ class LatticeReceipt(BaseModel):
     final_residual: float
     ocr_avg_confidence: Optional[float] = None
     ocr_low_confidence: Optional[bool] = None
+    # Audit flags
+    deterministic: Optional[bool] = None
     state_sig: str
 
     @staticmethod
@@ -72,6 +74,8 @@ class CompositeReceipt(BaseModel):
     # Retrieval provenance (optional)
     retrieval_backend: Optional[str] = None
     retrieval_params: Optional[Dict[str, Any]] = None
+    # Audit flags
+    deterministic: Optional[bool] = None
     state_sig: str
 
     @staticmethod

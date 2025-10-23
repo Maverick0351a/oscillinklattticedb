@@ -57,6 +57,30 @@ SPD_RESIDUAL_LAST = Gauge(
     "Last observed final residual during ingest (micro-lattice)",
 )
 
+# ACL metrics
+ACL_FILTERED_CANDIDATES = Counter(
+    "latticedb_acl_filtered_candidates_total",
+    "Total candidates filtered by ACL",
+    labelnames=("endpoint",),
+)
+ACL_ABSTAIN = Counter(
+    "latticedb_acl_abstain_total",
+    "Total abstains due to ACL",
+    labelnames=("reason",),
+)
+
+# LatticeDB operation latencies
+route_latency = Histogram(
+    "latticedb_route_seconds",
+    "Route latency (s)",
+    buckets=(0.01, 0.02, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0),
+)
+compose_latency = Histogram(
+    "latticedb_compose_seconds",
+    "Compose latency (s)",
+    buckets=(0.01, 0.02, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0),
+)
+
 
 async def metrics_middleware(request: Request, call_next):
     start = time.perf_counter()

@@ -7,9 +7,11 @@ are available. It still produces deterministic build receipts and can be used in
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
+import json
 from pathlib import Path
 
 from .base import RetrievalBackend, Candidate, BuildReceipt, dir_tree_sha256, _get_safe_base, canonicalize_and_validate
+from ..utils import atomic_write_text  # type: ignore
 
 
 class _TantivyBM25Backend:
@@ -40,13 +42,25 @@ class _TantivyBM25Backend:
         (outp/"bm25.marker").write_text("bm25:tantivy")
         index_hash = dir_tree_sha256(outp)
         self._index_dir = outp
-        return BuildReceipt(
+        br = BuildReceipt(
             backend_id="bm25:tantivy",
             backend_version="tantivy-py" if self._ok else "stub",
             params={"schema": "default"},
             index_hash=index_hash,
             training_hash=None,
         )
+        try:
+            atomic_write_text(outp/"index_receipt.json", json.dumps({
+                "version": 1,
+                "backend_id": br["backend_id"],
+                "backend_version": br["backend_version"],
+                "params": br["params"],
+                "index_hash": br["index_hash"],
+                "training_hash": br["training_hash"],
+            }, indent=2))
+        except Exception:
+            pass
+        return br
 
     def query(self, qvec, k: int, filters: Optional[Dict[str, Any]] = None) -> List[Candidate]:  # noqa: ANN001
         # Vector is ignored; real implementation would use string query.

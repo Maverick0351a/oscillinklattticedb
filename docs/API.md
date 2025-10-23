@@ -62,3 +62,42 @@ Body: { db_path (optional), display_name }
 Notes:
 - display_name is user-defined and stored under `db_root/metadata/names.json`.
 - This metadata does not affect receipts or the DB Merkle root.
+
+### ACL filters
+
+Opt-in ACL enforcement (env `LATTICEDB_ACL_ENFORCE=1`) lets you scope results by tenant/roles.
+
+Request fields:
+- RouteReq: `tenant?: string`, `roles?: string[]`
+- ComposeReq: `tenant?: string`, `roles?: string[]`
+
+Behavior:
+- When enforcement is on, the server filters candidate lattices where `tenant ∈ acl_tenants` AND `(roles ∩ acl_roles) ≠ ∅` (columns are best-effort; missing columns default to allow). If both tenant and roles are provided, both must pass (AND). If only one is provided, only that rule applies.
+- Public content: if a lattice has `acl_public=true` or includes `"public"` in `acl_tenants`, it is allowed regardless of tenant/roles.
+- When JWT is enabled, the server can map `tenant` and `roles` from token claims (`tenant`/`org`, `roles`). If enforcement is on and the caller is not privileged (role `admin`), the server ignores client-supplied tenant/roles and uses claims instead.
+- When `LATTICEDB_ACL_DENY_ON_MISSING_CLAIMS=1` and enforcement is on, requests without effective tenant/roles are rejected with HTTP 403.
+- Compose will abstain when all requested lattices are filtered out: `{ "abstain": true, "reason": "acl_no_candidates" }`.
+
+Examples:
+
+Route
+
+POST /v1/latticedb/route
+{
+	"db_path": "latticedb",
+	"q": "Quarterly results",
+	"k_lattices": 12,
+	"tenant": "acme",
+	"roles": ["analyst", "viewer"]
+}
+
+Compose
+
+POST /v1/latticedb/compose
+{
+	"db_path": "latticedb",
+	"q": "Quarterly results",
+	"lattice_ids": ["G-000001/L-000007","G-000004/L-000002"],
+	"tenant": "acme",
+	"roles": ["analyst"]
+}

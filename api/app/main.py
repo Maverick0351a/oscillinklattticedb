@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import os
 from fastapi import FastAPI, Request
+from pathlib import Path
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import setup_logging, settings
@@ -93,6 +94,7 @@ def metrics(request: Request):
 
 
 app.include_router(ops_router.router)
+app.include_router(ops_router.ops_admin)
 app.include_router(manifest_router.router)
 app.include_router(latticedb_router.router)
 
@@ -102,6 +104,18 @@ if settings.enable_test_endpoints or str(os.environ.get("LATTICEDB_ENABLE_TEST_E
     async def __test_slow(seconds: float = 0.1):
         await asyncio.sleep(max(0.0, float(seconds)))
         return {"slept": seconds}
+
+
+@app.on_event("startup")
+async def _preload_router() -> None:  # pragma: no cover - warmup optimization
+    """Preload router centroids to reduce first-query latency.
+
+    Best-effort; swallow errors to avoid blocking startup.
+    """
+    try:
+        Router(Path(settings.db_root)).load_centroids()
+    except Exception:
+        pass
 
 # Re-export middleware globals so tests can clear/patch:
 _RL_STATE = _RL_STATE_impl

@@ -61,7 +61,15 @@ class _NumpyFlatBackend:
         X = None
         ids: List[str] = []
         if vp is not None and vp.suffix == ".npy" and vp.is_file():
-            X = self._np.load(vp)
+            X = self._np.load(vp, mmap_mode="r")
+        elif vp is not None and vp.is_dir() and (vp/"router/centroids.npy").exists():
+            try:
+                X = self._np.load(vp/"router/centroids.npy", mmap_mode="r").astype(self._np.float32)
+            except Exception:
+                raw = self._np.fromfile(vp/"router/centroids.f32", dtype=self._np.float32)
+                D = int(kwargs.get("dim", 32))
+                N = raw.size // max(1, D)
+                X = raw.reshape(N, D)
         elif vp is not None and vp.is_dir() and (vp/"router/centroids.f32").exists():
             raw = self._np.fromfile(vp/"router/centroids.f32", dtype=self._np.float32)
             # Best effort: guess dim
